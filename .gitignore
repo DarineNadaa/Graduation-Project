@@ -1,0 +1,84 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.tox/
+.coveragerc
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+media
+
+# Flask instance folder
+instance/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# envs
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Archives and large files
+*.zip
+*.tar.gz
+*.tgz
+*.7z
+
+# Node
+node_modules/
+
+# OS
+Thumbs.db
+.DS_Store

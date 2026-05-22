@@ -1,0 +1,132 @@
+services:
+
+  # ── Target: Nginx + Wazuh Agent (Merged Blue Box) ──────────────────────────
+  target-agent:
+    build:
+      context: ./target-agent
+      dockerfile: Dockerfile
+    container_name: attense_target_agent
+    hostname: target-agent
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - target_logs:/var/log/nginx
+    networks:
+      - attense_net
+
+  # ── Manager: Wazuh Manager (Manager Box) ───────────────────────────────────
+  wazuh-manager:
+    build:
+      context: ./wazuh-manager
+    container_name: attense_wazuh_manager
+    hostname: wazuh.manager
+    restart: unless-stopped
+    ports:
+      - "1514:1514"
+      - "1515:1515"
+      - "514:514/udp"
+      - "55000:55000"
+    volumes:
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_queue:/var/ossec/queue
+    networks:
+      - attense_net
+
+  # ── Signal Store: Merged Mapper + Event Store (JSON Store Box) ───────────
+  signal-store:
+    build:
+      context: ./signal-store
+      dockerfile: Dockerfile
+    container_name: attense_signal_store
+    hostname: signal-store
+    restart: unless-stopped
+    depends_on:
+      - wazuh-manager
+    environment:
+      WAZUH_ALERTS_PATH: /wazuh/alerts/alerts/alerts.json
+      OUTPUT_MODE: file
+      OUTPUT_PATH: /attense/data/mapped_events.jsonl
+      INCIDENT_ID: "phase2-incident-001"
+    volumes:
+      - wazuh_logs:/wazuh/alerts:ro
+      - attense_ssd_volume:/attense/data
+      - ./attense-app/ATTENSE_app:/app/ATTENSE_app:ro
+    ports:
+      - "8005:8000"
+    networks:
+      - attense_net
+
+  # ── Attense Application (Attense Application Box) ─────────────────────────
+  attense-app:
+    build:
+      context: ./attense-app
+      dockerfile: Dockerfile
+    container_name: attense_app
+    hostname: attense-app
+    restart: unless-stopped
+    depends_on:
+      - signal-store
+    environment:
+      ATTENSE_DATA_PATH: /attense/data/mapped_events.jsonl
+    volumes:
+      - attense_ssd_volume:/attense/data:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - attense_net
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BlueTeam Component — Single Self-Contained Container
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Internally runs (via supervisord):
+  #   - Cassandra        (TheHive storage — internal only)
+  #   - Elasticsearch    (TheHive index — internal only)
+  #   - TheHive          (analyst UI — internal only)
+  #   - BlueTeam API     (FastAPI — the ONLY port exposed externally)
+  #
+  # ATTENSE Core communicates ONLY with port 8010.
+  # TheHive, Cassandra, and Elasticsearch are invisible outside this container.
+  # ═══════════════════════════════════════════════════════════════════════════
+  blueteam:
+    build:
+      context: ./blueteam
+      dockerfile: Dockerfile
+    container_name: attense_blueteam
+    hostname: blueteam
+    restart: unless-stopped
+    depends_on:
+      - attense-app
+      - signal-store
+    environment:
+      ATTENSE_APP_PATH: /attense_app
+      # Hive runs on localhost inside this container — not a sibling service
+      HIVE_URL: http://localhost:9000
+      HIVE_API_KEY: changeme
+      WEBHOOK_SECRET: changeme-webhook
+      SANDBOX_URL: http://target-agent:8020
+      LOG_LEVEL: INFO
+    volumes:
+      - ./attense-app:/attense_app:ro
+      - blueteam_cassandra_data:/var/lib/cassandra
+      - blueteam_elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      # ONLY the BlueTeam API is exposed — port 8010 is the single external interface
+      - "8010:8010"
+    networks:
+      - attense_net
+
+networks:
+  attense_net:
+    external: true
+
+volumes:
+  target_logs:
+  wazuh_logs:
+  wazuh_etc:
+  wazuh_queue:
+  attense_ssd_volume:
+    name: attense_ssd_volume
+  # BlueTeam internal storage — named to show they belong to the BlueTeam component
+  blueteam_cassandra_data:
+  blueteam_elasticsearch_data:

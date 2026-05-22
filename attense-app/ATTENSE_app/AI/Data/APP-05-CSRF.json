@@ -1,0 +1,153 @@
+{
+  "attack_id": "APP-05",
+  "attack_name": "Cross-Site Request Forgery (CSRF)",
+  "owasp": "A01:2021",
+  "owasp_source": "https://owasp.org/Top10/A01_2021-Broken_Access_Control/",
+  "mitre": "T1185",
+  "mitre_source": "https://attack.mitre.org/techniques/T1185/",
+  "description": "Forcing authenticated users to perform unintended actions without their consent.",
+
+  "complexity_factors": [
+    {
+      "factor": "admin_session_targeted",
+      "question": "Was the forged request sent using an admin or privileged session?",
+      "adds": 2,
+      "reason": "A forged request in an admin session can make account-level changes that are hard to reverse, increasing containment and recovery effort.",
+      "source": "MITRE T1078 — Valid Accounts: abuse of privileged sessions increases impact and containment complexity"
+    },
+    {
+      "factor": "state_changing_action",
+      "question": "Did the forged request perform a state-changing action such as password change or fund transfer?",
+      "adds": 2,
+      "reason": "State changes caused by CSRF may be difficult to reverse and require additional recovery steps beyond simply blocking the request.",
+      "source": "OWASP A01:2021 — Broken Access Control: unauthorized state changes are rated high impact"
+    },
+    {
+      "factor": "no_csrf_token",
+      "question": "Was there no CSRF token in place to prevent the forged request?",
+      "adds": 1,
+      "reason": "Absence of CSRF tokens means the application had no built-in defense, making detection harder since the request appeared legitimate.",
+      "source": "OWASP CSRF Prevention Cheat Sheet — missing CSRF tokens reduce detectability of forged requests"
+    },
+    {
+      "factor": "repeated_requests",
+      "question": "Did the attacker send repeated forged requests across multiple sessions?",
+      "adds": 1,
+      "reason": "Multiple forged requests mean the blue team must identify and reverse all affected sessions, not just one.",
+      "source": "NIST SP 800-61 Rev2 — Section 3.2: Scope assessment includes identifying all affected accounts and sessions"
+    }
+  ],
+
+  "ttc_ranges": [
+    {
+      "complexity_min": 1,
+      "complexity_max": 2,
+      "acceptable_min_min": 20,
+      "acceptable_max_min": 40,
+      "max_tolerance_min": 55,
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Low severity incidents should be contained rapidly with minimal escalation"
+    },
+    {
+      "complexity_min": 3,
+      "complexity_max": 4,
+      "acceptable_min_min": 40,
+      "acceptable_max_min": 80,
+      "max_tolerance_min": 100,
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Medium severity incidents require analysis before containment"
+    },
+    {
+      "complexity_min": 5,
+      "complexity_max": 6,
+      "acceptable_min_min": 80,
+      "acceptable_max_min": 130,
+      "max_tolerance_min": 160,
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: High severity incidents involve multiple IR phases before containment is possible"
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "CSRF-R01",
+      "phase": 2,
+      "description": "Alert must be investigated within 10 minutes of being raised",
+      "type": "major",
+      "penalty": -15,
+      "auto_fail": false,
+      "trigger": "No alert_investigation_started event within 600 seconds of alert_raised",
+      "source": "NIST SP 800-61 Rev2 — Section 3.2.4: Initial analysis should begin promptly after detection"
+    },
+    {
+      "id": "CSRF-R02",
+      "phase": 2,
+      "description": "Incident must be confirmed — anomalous authenticated request must be escalated",
+      "type": "major",
+      "penalty": -15,
+      "auto_fail": false,
+      "trigger": "No incident_confirmed event in event log",
+      "source": "NIST SP 800-61 Rev2 — Section 3.2: Incident declaration is a required step in the IR lifecycle"
+    },
+    {
+      "id": "CSRF-R03",
+      "phase": 2,
+      "description": "Containment must be initiated before max_tolerance threshold",
+      "type": "critical",
+      "penalty": -25,
+      "auto_fail": false,
+      "trigger": "No containment_initiated event before max_tolerance_min seconds",
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Containment strategy must be selected and implemented promptly"
+    },
+    {
+      "id": "CSRF-R04",
+      "phase": 2,
+      "description": "Containment must succeed — session invalidated and forged action reversed",
+      "type": "critical",
+      "penalty": -30,
+      "auto_fail": true,
+      "trigger": "No containment_succeeded event at all",
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Containment must be confirmed before incident can be closed"
+    }
+  ],
+
+  "scoring": {
+    "base_score": 100,
+    "verdict_thresholds": {
+      "excellent":    { "min": 90 },
+      "acceptable":   { "min": 70 },
+      "needs_review": { "min": 50 },
+      "failed":       { "min": 0  }
+    }
+  },
+
+  "scenarios": [
+    {
+      "scenario_id": "CSRF-S1",
+      "label": "CSRF on standard user — good response",
+      "description": "Blue team detects anomalous authenticated request, confirms forged action, and invalidates session within acceptable time.",
+      "complexity_factors_active": ["no_csrf_token", "state_changing_action"],
+      "complexity": 3,
+      "expected_score": 83,
+      "expected_verdict": "acceptable",
+      "logs": [
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "account", "outcome": "success", "detail": "Wazuh rule 31170 fired — anomalous authenticated POST request detected without CSRF token" },
+        { "t_offset_sec": 200,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert and reviewed session logs" },
+        { "t_offset_sec": 800,  "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "account", "outcome": "success", "detail": "Analyst-2 confirmed forged password change request from external origin" },
+        { "t_offset_sec": 3000, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "account", "outcome": "success", "detail": "Analyst-3 initiated session invalidation and account lock" },
+        { "t_offset_sec": 3300, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "account", "outcome": "success", "detail": "Session invalidated, forged change reversed" }
+      ]
+    },
+    {
+      "scenario_id": "CSRF-S2",
+      "label": "CSRF on admin session — missed entirely",
+      "description": "Blue team fails to investigate the alert. No incident confirmed, no containment. Auto-fail triggered.",
+      "complexity_factors_active": ["admin_session_targeted", "state_changing_action", "no_csrf_token"],
+      "complexity": 5,
+      "expected_score": 25,
+      "expected_verdict": "failed",
+      "logs": [
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "account", "outcome": "success", "detail": "Wazuh rule 31171 fired — forged request in admin session detected" },
+        { "t_offset_sec": 1500, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert very late" },
+        { "t_offset_sec": 2000, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_denied",               "target_type": "alert",   "outcome": "failure", "detail": "Analyst-1 incorrectly dismissed as normal admin activity" }
+      ]
+    }
+  ]
+}

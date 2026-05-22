@@ -1,0 +1,154 @@
+{
+  "attack_id": "APP-04",
+  "attack_name": "File Upload Exploit",
+  "owasp": "A04:2021",
+  "owasp_source": "https://owasp.org/Top10/A04_2021-Insecure_Design/",
+  "mitre": "T1505.003",
+  "mitre_source": "https://attack.mitre.org/techniques/T1505/003/",
+  "description": "Upload and execution of malicious files due to weak validation controls.",
+
+  "complexity_factors": [
+    {
+      "factor": "webshell_uploaded",
+      "question": "Was the uploaded file a webshell giving the attacker persistent remote access?",
+      "adds": 2,
+      "reason": "A webshell provides ongoing remote command execution. Containment requires finding and removing the shell, not just blocking the upload endpoint.",
+      "source": "MITRE T1505.003 — Web Shell: persistent server-side access significantly increases containment complexity"
+    },
+    {
+      "factor": "disguised_file_type",
+      "question": "Was the malicious file disguised as a legitimate file type (e.g. .php disguised as .jpg)?",
+      "adds": 1,
+      "reason": "Type disguise reduces the effectiveness of extension-based detection and requires deeper content inspection to identify.",
+      "source": "OWASP A04:2021 — Insecure Design: file type bypass is a common evasion technique reducing detectability"
+    },
+    {
+      "factor": "payload_executed",
+      "question": "Was the uploaded payload actually executed on the server?",
+      "adds": 2,
+      "reason": "Execution means the attack moved from upload to active exploitation. The blue team must now treat this as a full compromise, not just a failed upload.",
+      "source": "MITRE T1505.003 — Execution of uploaded payload escalates severity from attempt to confirmed compromise"
+    },
+    {
+      "factor": "privilege_escalation_attempted",
+      "question": "Did the attacker attempt privilege escalation after upload?",
+      "adds": 1,
+      "reason": "Privilege escalation after upload means the blast radius extends beyond the web application to the underlying OS.",
+      "source": "MITRE T1068 — Exploitation for Privilege Escalation: compounds containment effort across application and system layers"
+    }
+  ],
+
+  "ttc_ranges": [
+    {
+      "complexity_min": 1,
+      "complexity_max": 2,
+      "acceptable_min_min": 20,
+      "acceptable_max_min": 45,
+      "max_tolerance_min": 60,
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Low severity incidents should be contained rapidly with minimal escalation"
+    },
+    {
+      "complexity_min": 3,
+      "complexity_max": 4,
+      "acceptable_min_min": 45,
+      "acceptable_max_min": 90,
+      "max_tolerance_min": 120,
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Medium severity incidents require analysis before containment"
+    },
+    {
+      "complexity_min": 5,
+      "complexity_max": 6,
+      "acceptable_min_min": 90,
+      "acceptable_max_min": 150,
+      "max_tolerance_min": 180,
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: High severity incidents involve multiple IR phases before containment is possible"
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "UPL-R01",
+      "phase": 2,
+      "description": "Alert must be investigated within 10 minutes of being raised",
+      "type": "major",
+      "penalty": -15,
+      "auto_fail": false,
+      "trigger": "No alert_investigation_started event within 600 seconds of alert_raised",
+      "source": "NIST SP 800-61 Rev2 — Section 3.2.4: Initial analysis should begin promptly after detection"
+    },
+    {
+      "id": "UPL-R02",
+      "phase": 2,
+      "description": "Incident must be confirmed — malicious upload must be escalated",
+      "type": "major",
+      "penalty": -15,
+      "auto_fail": false,
+      "trigger": "No incident_confirmed event in event log",
+      "source": "NIST SP 800-61 Rev2 — Section 3.2: Incident declaration is a required step in the IR lifecycle"
+    },
+    {
+      "id": "UPL-R03",
+      "phase": 2,
+      "description": "Containment must be initiated before max_tolerance threshold",
+      "type": "critical",
+      "penalty": -25,
+      "auto_fail": false,
+      "trigger": "No containment_initiated event before max_tolerance_min seconds",
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Containment strategy must be selected and implemented promptly"
+    },
+    {
+      "id": "UPL-R04",
+      "phase": 2,
+      "description": "Containment must succeed — uploaded file removed and execution blocked",
+      "type": "critical",
+      "penalty": -30,
+      "auto_fail": true,
+      "trigger": "No containment_succeeded event at all",
+      "source": "NIST SP 800-61 Rev2 — Section 3.3: Containment must be confirmed before incident can be closed"
+    }
+  ],
+
+  "scoring": {
+    "base_score": 100,
+    "verdict_thresholds": {
+      "excellent":    { "min": 90 },
+      "acceptable":   { "min": 70 },
+      "needs_review": { "min": 50 },
+      "failed":       { "min": 0  }
+    }
+  },
+
+  "scenarios": [
+    {
+      "scenario_id": "UPL-S1",
+      "label": "Webshell upload — good response",
+      "description": "Blue team detects malicious upload, confirms webshell, removes it and blocks the endpoint within acceptable time.",
+      "complexity_factors_active": ["webshell_uploaded", "disguised_file_type"],
+      "complexity": 3,
+      "expected_score": 82,
+      "expected_verdict": "acceptable",
+      "logs": [
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31160 fired — malicious file upload detected in multipart request" },
+        { "t_offset_sec": 150,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert and reviewed upload logs" },
+        { "t_offset_sec": 720,  "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "service", "outcome": "success", "detail": "Analyst-2 confirmed uploaded file is a PHP webshell disguised as image" },
+        { "t_offset_sec": 3600, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 initiated removal of webshell and disabled upload endpoint" },
+        { "t_offset_sec": 4200, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "Webshell removed, upload endpoint blocked" }
+      ]
+    },
+    {
+      "scenario_id": "UPL-S2",
+      "label": "Executed payload — failed containment",
+      "description": "Blue team detects upload but payload executes before containment. Auto-fail triggered due to missing containment_succeeded.",
+      "complexity_factors_active": ["webshell_uploaded", "payload_executed", "privilege_escalation_attempted"],
+      "complexity": 5,
+      "expected_score": 30,
+      "expected_verdict": "failed",
+      "logs": [
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31161 fired — suspicious file execution after upload" },
+        { "t_offset_sec": 500,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert" },
+        { "t_offset_sec": 2000, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "containment_initiated",       "target_type": "service", "outcome": "failure", "detail": "Analyst-1 attempted to block endpoint but payload already executed" },
+        { "t_offset_sec": 2500, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "containment_failed",         "target_type": "service", "outcome": "failure", "detail": "Containment failed — webshell already active on server" }
+      ]
+    }
+  ]
+}

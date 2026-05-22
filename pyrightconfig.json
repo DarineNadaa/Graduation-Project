@@ -1,0 +1,19 @@
+{
+    "exclude": [
+        "**/_pyrefly_virtual_/**",
+        "**/.venv/**",
+        "**/node_modules/**"
+    ],
+    "reportMissingImports": "none",
+    "reportMissingTypeStubs": false,
+    "pythonVersion": "3.14",
+    "extraPaths": [
+        "./blueteam",
+        "./signal-store"
+    ],
+    "executionEnvironments": [
+        {
+            "root": "blueteam"
+        }
+    ]
+}

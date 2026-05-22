@@ -1,0 +1,206 @@
+{
+  "attack_id": "APP-01",
+  "attack_name": "Cross-Site Scripting (XSS)",
+  "owasp": "A03:2021",
+  "owasp_source": "https://owasp.org/www-community/attacks/xss/",
+  "mitre": "T1059.007",
+  "mitre_source": "https://attack.mitre.org/techniques/T1059/007/",
+  "description": "Injection of malicious client-side scripts into vulnerable web application inputs.",
+
+  "complexity_factors": [
+    {
+      "factor": "stored_vs_reflected",
+      "question": "Was the payload stored in the database rather than reflected?",
+      "adds": 1,
+      "reason": "Stored XSS persists and affects every user who loads the page, making it harder to scope and contain than a one-time reflected attack.",
+      "source": "OWASP XSS community page — https://owasp.org/www-community/attacks/xss/ — explicitly distinguishes stored XSS as higher impact and lower detectability than reflected XSS"
+    },
+    {
+      "factor": "admin_privilege_targeted",
+      "question": "Did the payload execute in an admin or privileged user session?",
+      "adds": 2,
+      "reason": "Admin session hijacking grants attacker elevated access, expanding the blast radius and increasing containment effort.",
+      "source": "MITRE T1078 — Valid Accounts: https://attack.mitre.org/techniques/T1078/ — abuse of privileged accounts increases impact severity and response complexity"
+    },
+    {
+      "factor": "obfuscated_payload",
+      "question": "Was the payload encoded or obfuscated to bypass filters?",
+      "adds": 1,
+      "reason": "Obfuscation reduces detectability by WAF and signature-based tools, requiring more analyst effort to identify the malicious intent.",
+      "source": "MITRE T1027 — Obfuscated Files or Information: https://attack.mitre.org/techniques/T1027/ — reduces detection confidence and increases analyst investigation time"
+    },
+    {
+      "factor": "multi_step_chain",
+      "question": "Was the XSS part of a larger attack chain (e.g. used to steal session and pivot)?",
+      "adds": 2,
+      "reason": "A chained attack means containment of XSS alone is insufficient — the analyst must trace and close all downstream exploitation paths.",
+      "source": "MITRE ATT&CK — Chained TTPs: https://attack.mitre.org/tactics/TA0002/ — chained techniques increase response complexity across multiple IR phases"
+    },
+    {
+      "factor": "dom_based_attack",
+      "question": "Was the XSS payload executed entirely client-side via DOM manipulation with no server-side reflection?",
+      "adds": 1,
+      "reason": "DOM-based XSS bypasses server-side WAF and log-based detection — the payload never reaches the server. Analysts must use browser-side forensics requiring higher skill and effort.",
+      "source": "OWASP DOM Based XSS — https://owasp.org/www-community/attacks/DOM_Based_XSS — defines DOM-based XSS as a variant where the attack executes via client-side script without server-side involvement, making standard server log detection ineffective",
+      "references": [
+        {
+          "name": "OWASP DOM Based XSS",
+          "url": "https://owasp.org/www-community/attacks/DOM_Based_XSS"
+        },
+        {
+          "name": "OWASP DOM-based XSS Prevention Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
+        }
+      ]
+    }
+  ],
+
+  "complexity_notes": "Maximum possible score is 1+2+1+2+1=7. TTC ranges cover up to 8 for safety margin. dom_based_attack was reduced from adds:2 to adds:1 to keep the scale consistent with the original 1-6 design, since it is a detection difficulty modifier not a full escalation factor.",
+
+  "ttc_ranges": [
+    {
+      "complexity_min": 1,
+      "complexity_max": 2,
+      "acceptable_min_min": 20,
+      "acceptable_max_min": 40,
+      "max_tolerance_sec": 3300,
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — low severity incidents should be contained rapidly; MTTA benchmark: good SOC teams acknowledge in 6-10 min — https://kpidepot.com/kpi/mean-time-acknowledge-mtta"
+    },
+    {
+      "complexity_min": 3,
+      "complexity_max": 5,
+      "acceptable_min_min": 40,
+      "acceptable_max_min": 80,
+      "max_tolerance_sec": 6000,
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — medium severity; top SOC organizations average 10-60 min investigation — https://www.prophetsecurity.ai/blog/soc-metrics-that-matter-mttr-mtti-false-negatives-and-more"
+    },
+    {
+      "complexity_min": 6,
+      "complexity_max": 8,
+      "acceptable_min_min": 80,
+      "acceptable_max_min": 130,
+      "max_tolerance_sec": 9600,
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — high severity; IBM Cost of Data Breach 2024 — https://www.ibm.com/reports/data-breach — high complexity incidents take significantly longer to contain"
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "XSS-R01",
+      "phase": 2,
+      "description": "Alert must be investigated within 10 minutes of being raised",
+      "type": "major",
+      "penalty": -15,
+      "auto_fail": false,
+      "trigger": "No alert_investigation_started event within 600 seconds of alert_raised",
+      "source": "NIST SP 800-61 Rev2 Section 3.2.4 — initial analysis should begin promptly after detection; MTTA benchmark: 6-10 min is good, above 15 min is poor — https://kpidepot.com/kpi/mean-time-acknowledge-mtta"
+    },
+    {
+      "id": "XSS-R02",
+      "phase": 2,
+      "description": "Incident must be confirmed — blue team must escalate beyond initial alert",
+      "type": "major",
+      "penalty": -15,
+      "auto_fail": false,
+      "trigger": "No incident_confirmed event in event log",
+      "source": "NIST SP 800-61 Rev2 Section 3.2 — incident declaration is a required step in the IR lifecycle"
+    },
+    {
+      "id": "XSS-R03",
+      "phase": 2,
+      "description": "Containment must be initiated before max_tolerance threshold",
+      "type": "critical",
+      "penalty": -25,
+      "auto_fail": false,
+      "trigger": "No containment_initiated event before max_tolerance_sec seconds",
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — containment strategy must be selected and implemented promptly"
+    },
+    {
+      "id": "XSS-R04",
+      "phase": 2,
+      "description": "Containment must succeed — session terminated or input blocked",
+      "type": "critical",
+      "penalty": -30,
+      "auto_fail": true,
+      "trigger": "No containment_succeeded event at all",
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — containment must be confirmed before incident can be closed"
+    }
+  ],
+
+  "scoring": {
+    "base_score": 100,
+    "verdict_thresholds": {
+      "excellent":    { "min": 90 },
+      "acceptable":   { "min": 70 },
+      "needs_review": { "min": 50 },
+      "failed":       { "min": 0  }
+    }
+  },
+
+  "scenarios": [
+    {
+      "scenario_id": "XSS-S1",
+      "label": "Stored XSS — good response",
+      "description": "Blue team detects, investigates, confirms and contains a stored XSS alert within acceptable time.",
+      "complexity_factors_active": ["stored_vs_reflected", "admin_privilege_targeted"],
+      "complexity": 3,
+      "expected_score": 85,
+      "expected_verdict": "acceptable",
+      "timing_source": "MTTA: 6 min acknowledgment is good performance per https://kpidepot.com/kpi/mean-time-acknowledge-mtta; containment at 65 min is within acceptable range for complexity 3 per NIST SP 800-61 Rev2 Section 3.3",
+      "logs": [
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31106 fired — XSS pattern detected in web log" },
+        { "t_offset_sec": 360,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert and began log review — 6 min MTTA (good)" },
+        { "t_offset_sec": 540,  "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "service", "outcome": "success", "detail": "Analyst-2 confirmed payload stored in DB, escalated to incident" },
+        { "t_offset_sec": 3600, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 initiated WAF rule to block script tags in input" },
+        { "t_offset_sec": 3900, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "WAF rule active, payload stripped from stored records — 65 min total, within acceptable range" }
+      ]
+    },
+    {
+      "scenario_id": "XSS-S2",
+      "label": "Reflected XSS — alert dismissed incorrectly",
+      "description": "Blue team raises alert but analyst incorrectly dismisses it as false positive. Containment never happens. Auto-fail triggered by XSS-R04.",
+      "complexity_factors_active": ["obfuscated_payload"],
+      "complexity": 1,
+      "expected_score": 0,
+      "expected_verdict": "failed",
+      "timing_source": "Auto-fail from XSS-R04 overrides score to 0 regardless of timing — NIST SP 800-61 Rev2 Section 3.3: containment must be confirmed",
+      "logs": [
+        { "t_offset_sec": 0,   "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31108 fired — encoded XSS pattern in query string" },
+        { "t_offset_sec": 400, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 6.6 min MTTA (good)" },
+        { "t_offset_sec": 600, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_denied",               "target_type": "alert",   "outcome": "failure", "detail": "Analyst-1 marked alert as false positive — incorrect decision, no containment follows" }
+      ]
+    },
+    {
+      "scenario_id": "XSS-S3",
+      "label": "DOM-Based XSS — delayed detection, successful containment",
+      "description": "Wazuh fires a CSP violation alert. Blue team struggles initially since no malicious payload appears in server logs. Eventually confirms DOM-based XSS and deploys CSP fix.",
+      "complexity_factors_active": ["dom_based_attack", "obfuscated_payload"],
+      "complexity": 2,
+      "expected_score": 85,
+      "expected_verdict": "acceptable",
+      "timing_source": "MTTA: 10.8 min acknowledgment is delayed; containment at 51.6 min is before max_tolerance of 55 min for complexity 2 — XSS-R01 penalty applied, no XSS-R03 penalty",
+      "notes": [
+        "DOM-based XSS payload operates entirely in the browser — server logs show no injected script.",
+        "Detection relies on CSP violation reports rather than HTTP request inspection.",
+        "Containment achieved via Content Security Policy hardening and replacing vulnerable innerHTML sink with textContent."
+      ],
+      "references": [
+        {
+          "name": "OWASP DOM Based XSS",
+          "url": "https://owasp.org/www-community/attacks/DOM_Based_XSS"
+        },
+        {
+          "name": "OWASP DOM-based XSS Prevention Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
+        }
+      ],
+      "logs": [
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31110 fired — CSP violation report received; script-src policy blocked inline execution from document.location sink" },
+        { "t_offset_sec": 650,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 10.8 min MTTA (delayed); server request logs reviewed — no malicious payload found in HTTP body or query string" },
+        { "t_offset_sec": 1200, "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "service", "outcome": "success", "detail": "Analyst-2 reviewed CSP violation report — confirmed DOM-based XSS via document.location fragment injection into innerHTML sink" },
+        { "t_offset_sec": 3100, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 deployed updated Content Security Policy and replaced vulnerable innerHTML sink with textContent" },
+        { "t_offset_sec": 3200, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "CSP policy active and sink patched — no further CSP violation reports; DOM-based XSS vector eliminated" }
+      ]
+    }
+  ]
+}
