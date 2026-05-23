@@ -3,7 +3,7 @@ webhook_router.py — BlueTeam Internal Webhook Receiver
 =======================================================
 Receives POST events emitted by TheHive when analysts act in the Hive UI.
 
-Since TheHive runs inside the SAME container (Option B / supervisord),
+Since TheHive runs inside the SAME container ( supervisord),
 it communicates with this endpoint via localhost:
 
     TheHive notifier → POST http://localhost:8010/internal/webhook/hive
