@@ -10,7 +10,7 @@ home_bp = Blueprint("home", __name__)
 
 _INDEX = """
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
-<title>AcmeCorp Internal Portal</title>
+<title>Lab</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#0f1117;color:#c8cdd8;min-height:100vh;}
@@ -117,6 +117,7 @@ def index():
         module_id="recon",
         path="/", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
     )
     return render_template_string(_INDEX)
 
@@ -156,6 +157,7 @@ def robots_txt():
         module_id="recon",
         path="/robots.txt", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         severity="low",
         learner_message="Discovered robots.txt — contains disallowed admin paths.",
     )
@@ -185,6 +187,7 @@ def security_txt():
         module_id="recon",
         path="/.well-known/security.txt", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         severity="low",
         learner_message="Discovered security.txt — reveals internal contact info and policy.",
     )
@@ -273,6 +276,7 @@ def csrf_lure():
         module_id="csrf",
         path="/evil/csrf-demo", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         severity="medium",
     )
     return render_template_string(_LURE_PAGE)

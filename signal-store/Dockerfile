@@ -7,7 +7,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── COPY CORE LOGIC ─────────────────────────
-# COPY ATTENSE_app /app/ATTENSE_app (Mounted via volume from attense-app)
+COPY ATTENSE_app /app/ATTENSE_app
 
 # ── Copy API package ────────────────────────
 COPY app /app/app

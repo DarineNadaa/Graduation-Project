@@ -1,21 +1,45 @@
+# =============================================================================
+# ATTENSE Cyber Range — docker-compose.yml (v6 - Guided Lab)
+# =============================================================================
+# Services:
+#   - target-agent        Purposefully vulnerable web app (Flask)
+#   - wazuh-manager       Wazuh SIEM manager
+#   - signal-store        Detection pipeline
+#   - attense-app         Dashboard / monitoring
+#   - red-team-backend    FastAPI API (sessions, progress, operator)
+#   - red-team-frontend   React UI served by nginx
+#   - attackbox           Lightweight pen-test tools container
+#   - zap                 OWASP ZAP proxy (local-only)
+# =============================================================================
+
 services:
 
-  # ── Target: Nginx + Wazuh Agent (Merged Blue Box) ──────────────────────────
+  # ── Target: Nginx + Flask vulnerable app + Wazuh agent ──────────────────────
   target-agent:
     build:
       context: ./target-agent
-      dockerfile: Dockerfile
     container_name: attense_target_agent
     hostname: target-agent
     restart: unless-stopped
+    depends_on:
+      wazuh-manager:
+        condition: service_healthy
     ports:
       - "8080:80"
     volumes:
-      - target_logs:/var/log/nginx
+      - target_nginx_logs:/var/log/nginx
+      - target_flask_logs:/app/logs
+      - target_ossec:/var/ossec
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 12 http://localhost:80/ >/dev/null"]
+      interval: 15s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
     networks:
       - attense_net
 
-  # ── Manager: Wazuh Manager (Manager Box) ───────────────────────────────────
+  # ── Manager: Wazuh Manager ──────────────────────────────────────────────────
   wazuh-manager:
     build:
       context: ./wazuh-manager
@@ -25,44 +49,55 @@ services:
     ports:
       - "1514:1514"
       - "1515:1515"
-      - "514:514/udp"
       - "55000:55000"
     volumes:
-      - wazuh_logs:/var/ossec/logs
-      - wazuh_etc:/var/ossec/etc
-      - wazuh_queue:/var/ossec/queue
+      - wazuh_manager_etc:/var/ossec/etc
+      - wazuh_manager_queue:/var/ossec/queue
+      - wazuh_alerts:/var/ossec/logs/alerts
+    healthcheck:
+      test: ["CMD-SHELL", "/var/ossec/bin/wazuh-control status | grep -q 'wazuh-authd is running'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     networks:
       - attense_net
 
-  # ── Signal Store: Merged Mapper + Event Store (JSON Store Box) ───────────
+  # ── Signal Store ────────────────────────────────────────────────────────────
   signal-store:
     build:
       context: ./signal-store
-      dockerfile: Dockerfile
     container_name: attense_signal_store
     hostname: signal-store
     restart: unless-stopped
     depends_on:
-      - wazuh-manager
+      wazuh-manager:
+        condition: service_healthy
     environment:
-      WAZUH_ALERTS_PATH: /wazuh/alerts/alerts/alerts.json
-      OUTPUT_MODE: file
+      WAZUH_ALERTS_PATH: /wazuh/alerts/alerts.json
+      OUTPUT_MODE: http
       OUTPUT_PATH: /attense/data/mapped_events.jsonl
-      INCIDENT_ID: "phase2-incident-001"
+      EVENT_STORE_URL: "http://blueteam:8010/blueteam/raise-alert"
+      INCIDENT_ID: "phase3-incident-001"
+      MODE: wazuh
     volumes:
-      - wazuh_logs:/wazuh/alerts:ro
+      - wazuh_alerts:/wazuh/alerts:ro
       - attense_ssd_volume:/attense/data
-      - ./attense-app/ATTENSE_app:/app/ATTENSE_app:ro
     ports:
       - "8005:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - attense_net
 
-  # ── Attense Application (Attense Application Box) ─────────────────────────
+  # ── Attense App ─────────────────────────────────────────────────────────────
   attense-app:
     build:
       context: ./attense-app
-      dockerfile: Dockerfile
     container_name: attense_app
     hostname: attense-app
     restart: unless-stopped
@@ -72,22 +107,112 @@ services:
       ATTENSE_DATA_PATH: /attense/data/mapped_events.jsonl
     volumes:
       - attense_ssd_volume:/attense/data:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q python /proc/1/comm"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - attense_net
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # BlueTeam Component — Single Self-Contained Container
-  # ═══════════════════════════════════════════════════════════════════════════
-  # Internally runs (via supervisord):
-  #   - Cassandra        (TheHive storage — internal only)
-  #   - Elasticsearch    (TheHive index — internal only)
-  #   - TheHive          (analyst UI — internal only)
-  #   - BlueTeam API     (FastAPI — the ONLY port exposed externally)
-  #
-  # ATTENSE Core communicates ONLY with port 8010.
-  # TheHive, Cassandra, and Elasticsearch are invisible outside this container.
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── AttackBox: Lightweight local pen-test tools ─────────────────────────────
+  attackbox:
+    build:
+      context: ./attackbox
+    container_name: attense-attackbox
+    hostname: attackbox
+    restart: unless-stopped
+    command: sleep infinity
+    depends_on:
+      - target-agent
+    networks:
+      - attense_net
+
+  # ── OWASP ZAP: Local proxy ─────────────────────────────────────────────────
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: attense_zap
+    hostname: zap
+    restart: unless-stopped
+    # -silent skips the on-boot add-on auto-update (which otherwise downloads
+    # ~13 addons and pushes API readiness from ~30s to ~4min, leaving the
+    # frontend ZAP panel stuck on "offline").
+    command: >
+      zap.sh -daemon -silent -host 0.0.0.0 -port 8080
+      -config api.key=attense-lab-key
+      -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
+      -config connection.timeoutInSecs=20
+    depends_on:
+      - target-agent
+    networks:
+      - attense_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://127.0.0.1:8080/JSON/core/view/version/?apikey=attense-lab-key' >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # ── Ollama: Local LLM inference ─────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama
+    container_name: attense_ollama
+    hostname: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - attense_net
+
+  # ── Red Team Backend: FastAPI ───────────────────────────────────────────────
+  red-team-backend:
+    build:
+      context: ./red-team
+    container_name: attense_red_team_backend
+    hostname: red-team-backend
+    restart: unless-stopped
+    depends_on:
+      - target-agent
+      - attackbox
+      - ollama
+    environment:
+      TARGET_HOST: target-agent
+      TARGET_PORT: "80"
+      LOG_DIR: /red-team/logs
+      ATTACKBOX_CONTAINER: attense-attackbox
+      ZAP_API_URL: "http://zap:8080"
+      ZAP_API_KEY: "attense-lab-key"
+      OLLAMA_URL: "http://ollama:11434"
+    volumes:
+      - red_team_logs:/red-team/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - attense_net
+
+  # ── Red Team Frontend: React + Vite ─────────────────────────────────────────
+  red-team-frontend:
+    build:
+      context: ./red-team/frontend
+    container_name: attense_red_team_frontend
+    hostname: red-team-frontend
+    restart: unless-stopped
+    depends_on:
+      - red-team-backend
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/frontend-health | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - attense_net
+
+  # ── Blue Team Service: FastAPI + Hive + Cassandra + Elasticsearch (all-in-one) ─
   blueteam:
     build:
       context: ./blueteam
@@ -101,11 +226,11 @@ services:
     environment:
       ATTENSE_APP_PATH: /attense_app
       # Hive runs on localhost inside this container — not a sibling service
-      HIVE_URL: http://localhost:9000
-      HIVE_API_KEY: changeme
-      WEBHOOK_SECRET: changeme-webhook
-      SANDBOX_URL: http://target-agent:8020
-      LOG_LEVEL: INFO
+      HIVE_URL: "http://localhost:9000"
+      HIVE_API_KEY: "changeme"
+      WEBHOOK_SECRET: "changeme-webhook"
+      SANDBOX_URL: "http://target-agent:8020"
+      LOG_LEVEL: "INFO"
     volumes:
       - ./attense-app:/attense_app:ro
       - blueteam_cassandra_data:/var/lib/cassandra
@@ -113,20 +238,31 @@ services:
     ports:
       # ONLY the BlueTeam API is exposed — port 8010 is the single external interface
       - "8010:8010"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8010/health',timeout=3).status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - attense_net
 
 networks:
   attense_net:
-    external: true
+    driver: bridge
 
 volumes:
-  target_logs:
-  wazuh_logs:
-  wazuh_etc:
-  wazuh_queue:
+  target_nginx_logs:
+  target_flask_logs:
+  target_ossec:
+  wazuh_manager_etc:
+  wazuh_manager_queue:
+  wazuh_alerts:
   attense_ssd_volume:
-    name: attense_ssd_volume
-  # BlueTeam internal storage — named to show they belong to the BlueTeam component
+  red_team_logs:
+  ollama_data:
+  # BlueTeam internal storage — Cassandra and Elasticsearch run inside the blueteam container
   blueteam_cassandra_data:
   blueteam_elasticsearch_data:

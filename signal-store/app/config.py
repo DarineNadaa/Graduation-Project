@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # ── HTTP API (Signal Mapper's own FastAPI health/ingest endpoint) ─────────
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    # Public URL where other services reach this signal-store's /ingest.
+    # Documentation only — not consumed by signal-store itself; the red-team
+    # notifier reads this env var (SIGNAL_STORE_URL) directly.
+    signal_store_url: str = "http://signal-store:8005"
 
     # ── Reader ────────────────────────────────────────────────────────────────
     # Seconds to wait for the alerts file to appear before aborting

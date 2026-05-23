@@ -55,6 +55,30 @@ def write_file(event: Event) -> None:
 
 # ── HTTP output ───────────────────────────────────────────────────────────────
 
+def _to_raise_alert_request(event: Event) -> dict:
+    """
+    Reshape an internal StandardEvent into the JSON body that the blue-team
+    /blueteam/raise-alert endpoint expects (RaiseAlertRequest).
+
+    Lives here, not in blueteam, so blueteam stays untouched and the
+    signal-store remains the single boundary that knows about both schemas.
+    """
+    md = event.metadata or {}
+    raw_ref = md.get("raw_ref") or {}
+    return {
+        "incident_id": event.incident_id,
+        "scenario_id": event.scenario_id,
+        "siem_id":     event.actor_id or "wazuh-manager",
+        "target_id":   event.target_id or "unknown",
+        "target_type": event.target_type or "host",
+        "rule_name":   md.get("description")
+                       or (f"wazuh_rule_{md.get('wazuh_rule_id')}"
+                           if md.get("wazuh_rule_id") else None),
+        "severity":    md.get("severity") or "medium",
+        "raw_log":     raw_ref.get("full_log") or md.get("description"),
+    }
+
+
 _http_client: httpx.Client | None = None
 _http_lock = threading.Lock()
 
@@ -80,9 +104,10 @@ def _build_retry_poster():
     )
     def _post(event: Event) -> None:
         url = settings.event_store_url
+        body = _to_raise_alert_request(event)
         resp = _get_http_client().post(
             url,
-            content=json.dumps(event.to_dict()),
+            content=json.dumps(body),
             headers={"Content-Type": "application/json"},
         )
         resp.raise_for_status()

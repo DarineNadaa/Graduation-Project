@@ -1,84 +1,41 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-*.egg
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-.tox/
-.coveragerc
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-media
-
-# Flask instance folder
-instance/
-
-# PyCharm
-.idea/
-
-# VS Code
-.vscode/
-
-# envs
-env/
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv/
 venv/
-ENV/
-env.bak/
-venv.bak/
+*.egg-info/
+**/.pytest_cache
 
-# Jupyter
-.ipynb_checkpoints
+# Node / Vite
+**/node_modules/
+**/dist/
+.vite/
 
-# Docker
-.docker/
-docker-compose.override.yml
-
-# Archives and large files
-*.zip
-*.tar.gz
-*.tgz
-*.7z
-
-# Node
-node_modules/
-
-# OS
+# Editors / OS
+.vscode/
+.idea/
+**/.DS_Store
 Thumbs.db
-.DS_Store
+*.swp
+*.swo
+
+# Logs / tmp
+**/logs/
+*.log
+npm-debug.log
+
+# Docker (runtime)
+red_team_logs/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# Archives
+**/*.zip
+
+# Gemini
+.gemini/

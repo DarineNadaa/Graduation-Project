@@ -8,7 +8,7 @@ import json
 import logging
 import os
 
-from flask import Blueprint, request, render_template_string
+from flask import Blueprint, request, render_template_string, current_app
 
 logger = logging.getLogger("target.system")
 system_bp = Blueprint("system", __name__)
@@ -99,6 +99,7 @@ def ping():
         module_id="cmd_injection",
         path="/system/ping", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         extra={"host_param": host},
     )
     # Detect injection patterns
@@ -109,6 +110,7 @@ def ping():
             module_id="cmd_injection",
             path="/system/ping", method="GET",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="medium",
             extra={"host_param": host[:200]},
         )
@@ -130,6 +132,7 @@ def ping():
             module_id="cmd_injection",
             path="/system/ping", method="GET",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="critical",
             extra={"host_param": host[:200], "output_excerpt": output[:300]},
         )

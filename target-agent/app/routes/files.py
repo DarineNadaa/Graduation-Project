@@ -12,7 +12,7 @@ import json
 import logging
 import os
 
-from flask import Blueprint, request, render_template_string
+from flask import Blueprint, request, render_template_string, current_app
 from werkzeug.utils import secure_filename  # noqa: F401  (kept for future use)
 
 logger   = logging.getLogger("target.files")
@@ -111,6 +111,7 @@ def read_file():
         module_id="dir_traversal",
         path="/files/read", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         extra={"path_param": path},
     )
     # Detect traversal attempts
@@ -122,6 +123,7 @@ def read_file():
             module_id="dir_traversal",
             path="/files/read", method="GET",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="medium",
             extra={"path_param": path[:200]},
         )
@@ -142,6 +144,7 @@ def read_file():
                 module_id="dir_traversal",
                 path="/files/read", method="GET",
                 source_ip=request.remote_addr,
+        via=current_app.detect_via(),
                 severity="critical",
                 extra={"path_param": path[:200]},
             )
@@ -227,6 +230,7 @@ def upload_file():
         module_id="file_upload",
         path="/files/upload", method=request.method,
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
     )
     if request.method == "GET":
         return render_template_string(_UPLOAD_PAGE, message="")
@@ -265,6 +269,7 @@ def upload_file():
         module_id="file_upload",
         path="/files/upload", method="POST",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         extra={"filename": filename, "content_type": file.content_type or ""},
     )
     DANGEROUS_EXT = (".php", ".phtml", ".jsp", ".jspx", ".asp", ".aspx",
@@ -277,6 +282,7 @@ def upload_file():
             module_id="file_upload",
             path="/files/upload", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="high",
             extra={"filename": filename},
         )
@@ -285,6 +291,7 @@ def upload_file():
             module_id="file_upload",
             path="/files/upload", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="high",
             learner_message=(
                 "An executable-style extension was accepted by the upload form. "
@@ -292,8 +299,6 @@ def upload_file():
             ),
             extra={"filename": filename},
         )
-
-    from flask import current_app
     served_url = current_app.lab_url(f"/static/uploads/{filename}")
     msg = (
         '<div class="result-msg">&#9989; File saved successfully'

@@ -24,6 +24,16 @@ from routes.system  import system_bp
 from routes.files   import files_bp
 from routes.profile import profile_bp
 
+# Operator-mode parallel routes (harder backend, same UI templates).
+# Mounted under /op/* — reached via the lab-browser proxy at /target-op/*
+# and directly from the AttackBox at http://target-agent/op/*
+from routes_op.auth    import auth_op_bp
+from routes_op.home    import home_op_bp
+from routes_op.search  import search_op_bp
+from routes_op.system  import system_op_bp
+from routes_op.files   import files_op_bp
+from routes_op.profile import profile_op_bp
+
 # ── App-level JSON logger (read by Wazuh agent via ossec.conf) ────────────────
 LOG_DIR = "/app/logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -118,6 +128,57 @@ def _inject_lab_url():
 # Expose helper on the app object for direct Python imports.
 app.lab_url = lab_url
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Channel detection — was this request driven by the lab browser, the
+# AttackBox terminal/curl, or something we don't recognise?
+#
+# Used by every vulnerable route to tag the resulting evidence event with a
+# `via` field. Operator-mode missions only count evidence with via="attackbox".
+# ─────────────────────────────────────────────────────────────────────────────
+import socket as _socket
+
+# Resolve the AttackBox container's IP at startup (best-effort — it may not
+# yet be running when the target-agent boots).
+_ATTACKBOX_IPS: set[str] = set()
+def _refresh_attackbox_ips() -> None:
+    for host in ("attackbox", "attense_attackbox"):
+        try:
+            for info in _socket.getaddrinfo(host, None):
+                ip = info[4][0]
+                if ip:
+                    _ATTACKBOX_IPS.add(ip)
+        except OSError:
+            pass
+_refresh_attackbox_ips()
+
+
+def detect_via() -> str:
+    """Classify the current Flask request: 'browser' | 'attackbox' | 'unknown'."""
+    try:
+        ua  = (request.headers.get("User-Agent") or "")
+        prefix = (request.headers.get("X-Forwarded-Prefix") or "").rstrip("/")
+        ip  = request.remote_addr or ""
+        # Explicit signal from AttackBox (curl alias, ZAP wrapper, etc.)
+        if "AttenseAttackBox" in ua:
+            return "attackbox"
+        # Container-IP signal — refresh cache if we don't know it yet
+        if not _ATTACKBOX_IPS:
+            _refresh_attackbox_ips()
+        if ip in _ATTACKBOX_IPS:
+            return "attackbox"
+        # Lab browser proxies always set X-Forwarded-Prefix=/target (guided)
+        # or /target-op (operator-mode harder backend). Both are browser-driven.
+        if prefix in ("/target", "/target-op"):
+            return "browser"
+    except RuntimeError:
+        pass  # outside request context
+    return "unknown"
+
+
+# Make detect_via reachable from blueprint modules without circular imports
+app.detect_via = detect_via
+
 # ── Register blueprints ───────────────────────────────────────────────────────
 app.register_blueprint(home_bp)
 app.register_blueprint(auth_bp,    url_prefix="/auth")
@@ -125,6 +186,16 @@ app.register_blueprint(search_bp)
 app.register_blueprint(system_bp,  url_prefix="/system")
 app.register_blueprint(files_bp,   url_prefix="/files")
 app.register_blueprint(profile_bp, url_prefix="/profile")
+
+# Operator-mode (HARDER) parallel backend. All 7 module surfaces now
+# have a routes_op/ counterpart with stricter logic — same UI, harder
+# backend.
+app.register_blueprint(home_op_bp,    url_prefix="/op")
+app.register_blueprint(auth_op_bp,    url_prefix="/op/auth")
+app.register_blueprint(search_op_bp,  url_prefix="/op")
+app.register_blueprint(system_op_bp,  url_prefix="/op/system")
+app.register_blueprint(files_op_bp,   url_prefix="/op/files")
+app.register_blueprint(profile_op_bp, url_prefix="/op/profile")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -137,17 +208,18 @@ from flask import jsonify  # noqa: E402
 
 @app.get("/lab/events")
 def lab_events():
-    """List structured lab events. Filter with ?since=<float> and ?module_id=<id>."""
+    """List structured lab events. Filter with ?since=<float> & ?module_id=<id> & ?via=<channel>."""
     try:
         since = float(request.args.get("since", "0") or 0.0)
     except ValueError:
         since = 0.0
     module_id = request.args.get("module_id") or None
+    via       = request.args.get("via") or None
     try:
         limit = int(request.args.get("limit", "500"))
     except ValueError:
         limit = 500
-    events = evidence.list_events(since=since, module_id=module_id, limit=limit)
+    events = evidence.list_events(since=since, module_id=module_id, via=via, limit=limit)
     return jsonify({"events": events, "now": __import__("time").time()})
 
 
@@ -156,6 +228,119 @@ def lab_events_reset():
     """Clear the in-memory evidence store. Used when a learner restarts a mission."""
     evidence.reset()
     return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Browser-action capture (Phase 2)
+#
+# A tiny script is injected into every HTML response from the target-agent.
+# It listens to click / submit / page-view events inside the iframe and POSTs
+# them to the red-team backend at /api/lab/actions.
+#
+# The script uses postMessage so we don't have to deal with the iframe's
+# cross-origin restrictions when reading the parent's session id — the parent
+# Workspace posts the active session_id into the iframe at mount time.
+# ─────────────────────────────────────────────────────────────────────────────
+_TRACE_JS = """
+(function () {
+  if (window.__attenseTraceInstalled) return;
+  window.__attenseTraceInstalled = true;
+
+  var sessionId = null;
+  var backend   = '';   // empty == same origin (proxied through frontend nginx)
+
+  // Receive session_id from the parent Workspace
+  window.addEventListener('message', function (e) {
+    if (e.data && e.data.type === '__attense_session') {
+      sessionId = e.data.session_id || null;
+      backend   = e.data.backend   || '';
+    }
+  });
+
+  function post(payload) {
+    payload.session_id = sessionId;
+    payload.page = location.pathname + location.search;
+    try {
+      // The iframe is same-origin via the /target/ proxy, so /api/ works.
+      fetch(backend + '/api/lab/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(function(){});
+    } catch (_) {}
+  }
+
+  // Page load
+  post({ kind: 'page_view' });
+
+  // Click capture
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t) return;
+    var sel = (t.tagName || '').toLowerCase();
+    if (t.id) sel += '#' + t.id;
+    if (t.name) sel += '[name=' + t.name + ']';
+    var text = (t.innerText || t.value || t.title || '').trim().slice(0, 80);
+    post({ kind: 'click', selector: sel, text: text });
+  }, true);
+
+  // Form submit
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    var sel = 'form';
+    if (f && f.id) sel += '#' + f.id;
+    if (f && f.action) sel += '[action=' + (f.action.split('/').slice(-2).join('/')) + ']';
+    var fields = {};
+    if (f && f.elements) {
+      for (var i = 0; i < f.elements.length; i++) {
+        var el = f.elements[i];
+        if (!el.name) continue;
+        // Don't capture passwords verbatim.
+        if (el.type === 'password') { fields[el.name] = '***'; continue; }
+        fields[el.name] = (el.value || '').slice(0, 80);
+      }
+    }
+    post({ kind: 'form_submit', selector: sel, extra: { fields: fields } });
+  }, true);
+})();
+"""
+
+
+@app.get("/lab/__attense_trace.js")
+def serve_trace_js():
+    """Serve the action-capture script."""
+    from flask import Response
+    return Response(_TRACE_JS, mimetype="application/javascript")
+
+
+@app.after_request
+def _inject_trace_script(resp):
+    """Append a <script> tag pointing at __attense_trace.js to every HTML page
+    served by the target-agent. This is how clicks and form submits inside
+    the iframe become evidence the red-team backend can read."""
+    try:
+        ct = (resp.headers.get("Content-Type") or "").lower()
+        if "text/html" not in ct:
+            return resp
+        # Only patch full HTML documents
+        body = resp.get_data(as_text=True)
+        if "</body>" not in body:
+            return resp
+        prefix = (request.headers.get("X-Forwarded-Prefix") or "").rstrip("/")
+        tag = (
+            '<script src="' + prefix + '/lab/__attense_trace.js" '
+            'data-attense="trace" defer></script>'
+        )
+        # Inject just before </body>
+        body = body.replace("</body>", tag + "</body>", 1)
+        resp.set_data(body)
+        # Update content-length if present
+        if resp.headers.get("Content-Length"):
+            resp.headers["Content-Length"] = str(len(resp.get_data()))
+    except Exception:
+        pass  # never break a page over telemetry
+    return resp
 
 if __name__ == "__main__":
     # Bind to all interfaces inside the container; nginx proxies from port 80.

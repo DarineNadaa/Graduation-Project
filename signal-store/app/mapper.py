@@ -118,22 +118,26 @@ _TARGET_TYPE_MAP: dict[str, str] = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _resolve_incident_id() -> str:
+def _resolve_incident_id(alert: WazuhAlert) -> str:
     """
-    Read INCIDENT_ID from the environment. Raises RuntimeError if absent.
+    Mint a per-alert incident ID.
 
-    Incident identity is externally owned — the mapper never generates it.
-    All alerts belonging to the same exercise must share one incident ID
-    so the state machine can build a coherent timeline.
+    One Wazuh alert = one ticket. We use Wazuh's own alert id (e.g.
+    "1778258112.30741", which is unique per fired rule instance) as the
+    incident_id, so each detected attack opens its own incident in
+    blueteam instead of every alert piling onto a single shared ticket.
+
+    Falls back to a generated UUID if Wazuh didn't include an id, and
+    finally to the legacy INCIDENT_ID env var for backwards compatibility
+    in tests / file-output mode where blueteam isn't in the loop.
     """
-    incident_id = os.getenv("INCIDENT_ID")
-    if not incident_id:
-        raise RuntimeError(
-            "INCIDENT_ID environment variable must be set. "
-            "All alerts in the same exercise must share one incident ID. "
-            "Example:  export INCIDENT_ID=phase2-incident-001"
-        )
-    return incident_id
+    wazuh_id = str(alert.raw.get("id", "")).strip()
+    if wazuh_id:
+        return f"wazuh-{wazuh_id}"
+    env_id = os.getenv("INCIDENT_ID")
+    if env_id:
+        return env_id
+    return f"wazuh-{uuid.uuid4()}"
 
 
 def _build_metadata(alert: WazuhAlert, cls) -> dict:
@@ -235,7 +239,7 @@ def map_alert(raw: dict) -> Optional[Event]:
         or or_none(alert.agent.id)
         or "unknown"
     )
-    incident_id = _resolve_incident_id()
+    incident_id = _resolve_incident_id(alert)
     metadata    = _build_metadata(alert, cls)
 
     # ── Step 4: Determine outcome ──────────────────────────────────────────────

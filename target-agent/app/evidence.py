@@ -53,9 +53,21 @@ def record(
     learner_message: Optional[str] = None,
     severity: str = "info",
     source_ip: Optional[str] = None,
+    via: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Record a structured lab event. Returns the event."""
+    """Record a structured lab event. Returns the event.
+
+    `via` describes how the request reached the target-agent:
+      - "browser"   → request came through the lab-browser proxy
+                      (X-Forwarded-Prefix: /target was set)
+      - "attackbox" → request came from the AttackBox container
+                      (User-Agent contains "AttenseAttackBox" or
+                       source_ip matches the AttackBox container hostname)
+      - "unknown"   → none of the above (e.g. someone hitting the bare
+                       target-agent host directly)
+    Operator-mode missions only count evidence with via="attackbox".
+    """
     ev = {
         "id":              len(_events),
         "ts":              time.time(),
@@ -65,6 +77,7 @@ def record(
         "method":          method,
         "severity":        severity,
         "source_ip":       source_ip,
+        "via":             via or "unknown",
         "learner_message": learner_message or _DEFAULT_MSG.get(event_type),
         "extra":           dict(extra or {}),
     }
@@ -125,6 +138,9 @@ def _detect_patterns(ev: Dict[str, Any]) -> None:
                 "method":          "POST",
                 "severity":        "high",
                 "source_ip":       ip,
+                # Inherit via from the triggering event so operator-mode
+                # gating still works on derived events.
+                "via":             ev.get("via", "unknown"),
                 "learner_message": (
                     f"{len(recent_fails)} failed login attempts from this client "
                     "in the last 5 minutes — brute-force pattern detected."
@@ -159,6 +175,7 @@ def _detect_patterns(ev: Dict[str, Any]) -> None:
                 "method":          "GET",
                 "severity":        "medium",
                 "source_ip":       ip,
+                "via":             ev.get("via", "unknown"),
                 "learner_message": (
                     f"Learner visited {len(visited_types)} distinct portal areas "
                     f"({', '.join(sorted(visited_types))}) — recon sequence confirmed."
@@ -172,13 +189,20 @@ def _detect_patterns(ev: Dict[str, Any]) -> None:
 
 def list_events(*, since: float = 0.0,
                 module_id: Optional[str] = None,
+                via: Optional[str] = None,
                 limit: int = 500) -> List[Dict[str, Any]]:
-    """Return events recorded after `since` epoch seconds, optionally filtered."""
+    """Return events recorded after `since` epoch seconds, optionally filtered.
+
+    `via` filters by the channel the request came from:
+      "browser" | "attackbox" | "unknown"
+    """
     with _lock:
         snap = list(_events)
     out = [e for e in snap if e["ts"] >= since]
     if module_id:
         out = [e for e in out if e.get("module_id") == module_id]
+    if via:
+        out = [e for e in out if e.get("via") == via]
     return out[-limit:]
 
 

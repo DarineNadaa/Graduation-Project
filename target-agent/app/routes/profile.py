@@ -7,7 +7,7 @@ no Origin/Referer enforcement.
 import json
 import logging
 
-from flask import Blueprint, request, render_template_string, session
+from flask import Blueprint, request, render_template_string, session, current_app
 
 logger     = logging.getLogger("target.profile")
 profile_bp = Blueprint("profile", __name__)
@@ -123,6 +123,7 @@ def profile():
         module_id="csrf",
         path="/profile/", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         extra={"user": user},
     )
     return render_template_string(
@@ -157,6 +158,7 @@ def update():
         module_id="csrf",
         path="/profile/update", method="POST",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         extra={"user": user, "new_email": email, "referer": referer},
     )
     # No anti-CSRF token field is ever sent — every request is by definition missing one
@@ -167,6 +169,7 @@ def update():
             module_id="csrf",
             path="/profile/update", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="high",
             extra={"user": user, "referer": referer},
         )
@@ -177,6 +180,7 @@ def update():
             module_id="csrf",
             path="/profile/update", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="high",
             extra={"user": user, "referer": referer},
         )
@@ -190,6 +194,7 @@ def update():
                 module_id="csrf",
                 path="/profile/update", method="POST",
                 source_ip=request.remote_addr,
+        via=current_app.detect_via(),
                 severity="critical",
                 extra={"user": user, "old_email": old_email, "new_email": email},
             )

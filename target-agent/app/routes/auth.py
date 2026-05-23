@@ -14,7 +14,7 @@ target-agent host AND through the lab-browser proxy at /target/...
 import json
 import logging
 
-from flask import Blueprint, request, render_template_string, session, redirect
+from flask import Blueprint, request, render_template_string, session, redirect, current_app
 
 logger = logging.getLogger("target.auth")
 
@@ -33,7 +33,7 @@ _LOGIN_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Sign In · ATTENSE Portal</title>
+<title>Sign In · Lab</title>
 <style>
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
   .login-shell{width:100%;max-width:440px;}
@@ -55,7 +55,7 @@ _LOGIN_PAGE = """<!DOCTYPE html>
 <div class="login-shell">
   <div class="brand">
     <div class="brand-mark">A</div>
-    <div class="brand-name">ATTENSE Portal</div>
+    <div class="brand-name">Lab</div>
   </div>
   <div class="login-card">
     <h1>Sign In</h1>
@@ -68,7 +68,7 @@ _LOGIN_PAGE = """<!DOCTYPE html>
       <input name="password" type="password" autocomplete="current-password" required>
       <button type="submit">Sign In</button>
     </form>
-    <a href="{{ lab_url('/') }}" class="back">&larr; Back to Portal</a>
+    <a href="{{ lab_url('/') }}" class="back">&larr; Back</a>
   </div>
 </div>
 </body></html>"""
@@ -98,6 +98,7 @@ def login():
             module_id="brute_force",
             path="/auth/login", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             extra={"username": username},
         )
         # Mark a credential pair as found (the success criterion)
@@ -106,11 +107,11 @@ def login():
             module_id="brute_force",
             path="/auth/login", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             severity="high",
             learner_message=f"Valid credential confirmed: {username} / (correct password).",
             extra={"username": username},
         )
-        from flask import current_app
         return redirect(current_app.lab_url("/profile/"))
     else:
         # [VULN] Username enumeration
@@ -133,6 +134,7 @@ def login():
             module_id="brute_force",
             path="/auth/login", method="POST",
             source_ip=request.remote_addr,
+        via=current_app.detect_via(),
             extra={"username": username, "known_user": username in _USERS},
         )
         return render_template_string(
@@ -143,5 +145,4 @@ def login():
 @auth_bp.route("/logout")
 def logout():
     session.pop("user", None)
-    from flask import current_app
     return redirect(current_app.lab_url("/"))

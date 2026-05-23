@@ -11,7 +11,7 @@ iframe-safe routing.
 import json
 import logging
 
-from flask import Blueprint, request, render_template_string
+from flask import Blueprint, request, render_template_string, current_app
 
 logger = logging.getLogger("target.search")
 search_bp = Blueprint("search", __name__)
@@ -112,6 +112,7 @@ def search():
         module_id="xss",
         path="/search", method="GET",
         source_ip=request.remote_addr,
+        via=current_app.detect_via(),
         extra={"query": q},
     )
     # Detect XSS-like payloads: script tags, event handlers, javascript:
@@ -125,6 +126,7 @@ def search():
                 module_id="xss",
                 path="/search", method="GET",
                 source_ip=request.remote_addr,
+        via=current_app.detect_via(),
                 severity="medium",
                 extra={"query": q[:200]},
             )
@@ -133,6 +135,7 @@ def search():
                 module_id="xss",
                 path="/search", method="GET",
                 source_ip=request.remote_addr,
+        via=current_app.detect_via(),
                 severity="high",
                 extra={"query": q[:200]},
             )

@@ -55,6 +55,8 @@ _RULE_ID_MAP: dict[str, Classification] = {
     # APP-04: File Upload Exploit – Wazuh web rules for malicious uploads
     "31160": Classification("file_upload_exploit",  "critical", "detected"),
     "31161": Classification("file_upload_exploit",  "high",     "detected"),
+    # ATTENSE local rule for executable extension uploads (.php/.sh/.jsp...)
+    "100150": Classification("file_upload_exploit", "critical", "detected"),
 
     # APP-05: CSRF – anomalous authenticated request patterns
     "31170": Classification("csrf",                 "high",     "detected"),
@@ -87,6 +89,7 @@ _GROUP_MAP: list[tuple[str, Classification]] = [
 
     # APP-04: File upload
     ("file_upload",           Classification("file_upload_exploit",  "critical", "detected")),
+    ("web_shell",             Classification("file_upload_exploit",  "critical", "detected")),
 
     # APP-05: CSRF
     ("csrf",                  Classification("csrf",                 "high",     "detected")),
