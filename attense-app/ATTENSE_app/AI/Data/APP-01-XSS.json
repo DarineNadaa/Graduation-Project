@@ -1,205 +1,326 @@
 {
   "attack_id": "APP-01",
   "attack_name": "Cross-Site Scripting (XSS)",
-  "owasp": "A03:2021",
+  "owasp": "A03:2021 — Injection",
   "owasp_source": "https://owasp.org/www-community/attacks/xss/",
-  "mitre": "T1059.007",
+  "mitre": "T1059.007 — Command and Scripting Interpreter: JavaScript",
   "mitre_source": "https://attack.mitre.org/techniques/T1059/007/",
   "description": "Injection of malicious client-side scripts into vulnerable web application inputs.",
 
-  "complexity_factors": [
-    {
-      "factor": "stored_vs_reflected",
-      "question": "Was the payload stored in the database rather than reflected?",
-      "adds": 1,
-      "reason": "Stored XSS persists and affects every user who loads the page, making it harder to scope and contain than a one-time reflected attack.",
-      "source": "OWASP XSS community page — https://owasp.org/www-community/attacks/xss/ — explicitly distinguishes stored XSS as higher impact and lower detectability than reflected XSS"
-    },
-    {
-      "factor": "admin_privilege_targeted",
-      "question": "Did the payload execute in an admin or privileged user session?",
-      "adds": 2,
-      "reason": "Admin session hijacking grants attacker elevated access, expanding the blast radius and increasing containment effort.",
-      "source": "MITRE T1078 — Valid Accounts: https://attack.mitre.org/techniques/T1078/ — abuse of privileged accounts increases impact severity and response complexity"
-    },
-    {
-      "factor": "obfuscated_payload",
-      "question": "Was the payload encoded or obfuscated to bypass filters?",
-      "adds": 1,
-      "reason": "Obfuscation reduces detectability by WAF and signature-based tools, requiring more analyst effort to identify the malicious intent.",
-      "source": "MITRE T1027 — Obfuscated Files or Information: https://attack.mitre.org/techniques/T1027/ — reduces detection confidence and increases analyst investigation time"
-    },
-    {
-      "factor": "multi_step_chain",
-      "question": "Was the XSS part of a larger attack chain (e.g. used to steal session and pivot)?",
-      "adds": 2,
-      "reason": "A chained attack means containment of XSS alone is insufficient — the analyst must trace and close all downstream exploitation paths.",
-      "source": "MITRE ATT&CK — Chained TTPs: https://attack.mitre.org/tactics/TA0002/ — chained techniques increase response complexity across multiple IR phases"
-    },
-    {
-      "factor": "dom_based_attack",
-      "question": "Was the XSS payload executed entirely client-side via DOM manipulation with no server-side reflection?",
-      "adds": 1,
-      "reason": "DOM-based XSS bypasses server-side WAF and log-based detection — the payload never reaches the server. Analysts must use browser-side forensics requiring higher skill and effort.",
-      "source": "OWASP DOM Based XSS — https://owasp.org/www-community/attacks/DOM_Based_XSS — defines DOM-based XSS as a variant where the attack executes via client-side script without server-side involvement, making standard server log detection ineffective",
-      "references": [
-        {
-          "name": "OWASP DOM Based XSS",
-          "url": "https://owasp.org/www-community/attacks/DOM_Based_XSS"
-        },
-        {
-          "name": "OWASP DOM-based XSS Prevention Cheat Sheet",
-          "url": "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
-        }
-      ]
-    }
-  ],
+  "cvss_methodology": {
+    "version": "CVSS v3.1",
+    "source": "FIRST.org CVSS v3.1 Specification Document — https://www.first.org/cvss/v3-1/specification-document",
+    "note": "Each scenario is scored independently using the CVSS v3.1 Base Score formula. The vector reflects the worst-case conditions of that specific scenario. Scores are computed using Table 16 numeric constants from the official specification. The cvss_components object in each scenario contains the machine-readable vector breakdown used by the evaluation engine to recompute and validate the base score at runtime.",
+    "calculator_reference": "https://www.first.org/cvss/calculator/3.1"
+  },
 
-  "complexity_notes": "Maximum possible score is 1+2+1+2+1=7. TTC ranges cover up to 8 for safety margin. dom_based_attack was reduced from adds:2 to adds:1 to keep the scale consistent with the original 1-6 design, since it is a detection difficulty modifier not a full escalation factor.",
-
-  "ttc_ranges": [
-    {
-      "complexity_min": 1,
-      "complexity_max": 2,
-      "acceptable_min_min": 20,
-      "acceptable_max_min": 40,
-      "max_tolerance_sec": 3300,
-      "source": "NIST SP 800-61 Rev2 Section 3.3 — low severity incidents should be contained rapidly; MTTA benchmark: good SOC teams acknowledge in 6-10 min — https://kpidepot.com/kpi/mean-time-acknowledge-mtta"
-    },
-    {
-      "complexity_min": 3,
-      "complexity_max": 5,
-      "acceptable_min_min": 40,
-      "acceptable_max_min": 80,
-      "max_tolerance_sec": 6000,
-      "source": "NIST SP 800-61 Rev2 Section 3.3 — medium severity; top SOC organizations average 10-60 min investigation — https://www.prophetsecurity.ai/blog/soc-metrics-that-matter-mttr-mtti-false-negatives-and-more"
-    },
-    {
-      "complexity_min": 6,
-      "complexity_max": 8,
-      "acceptable_min_min": 80,
-      "acceptable_max_min": 130,
-      "max_tolerance_sec": 9600,
-      "source": "NIST SP 800-61 Rev2 Section 3.3 — high severity; IBM Cost of Data Breach 2024 — https://www.ibm.com/reports/data-breach — high complexity incidents take significantly longer to contain"
-    }
-  ],
+  "ttc_model": {
+    "type": "continuous",
+    "formula": "TTC_expected_sec = k × (10 - cvss_base_score)",
+    "ttc_max_formula": "TTC_max_sec = TTC_expected_sec × 1.5",
+    "k": 3600,
+    "k_unit": "seconds",
+    "k_rationale": "k = 3600 was calibrated by anchoring the formula to four empirical SOC response time targets from Prophet Security (Critical=1hr, High=2hr, Medium=4hr, Low=8hr) mapped to the representative CVSS midpoint of each band. The formula is continuous — a CVSS 7.0 scenario receives a materially different TTC budget than a CVSS 8.9 scenario (10800s vs 3960s). The discrete band lookup table has been removed entirely.",
+    "calibration_anchors": [
+      { "cvss_midpoint": 9.5, "band": "critical", "ttc_expected_sec": 3600,  "k_implied": 7200, "note": "k=7200 at 9.5 but converges toward 3600 as CVSS rises; k=3600 is the conservative (tighter) bound" },
+      { "cvss_midpoint": 8.0, "band": "high",     "ttc_expected_sec": 7200,  "k_implied": 3600 },
+      { "cvss_midpoint": 5.5, "band": "medium",   "ttc_expected_sec": 14400, "k_implied": 3200, "note": "3200 vs 3600 is ~11% variance — within SOC measurement noise; k=3600 is the safer choice" },
+      { "cvss_midpoint": 2.0, "band": "low",      "ttc_expected_sec": 28800, "k_implied": 3600 }
+    ],
+    "sources": [
+      "Prophet Security SOC Metrics Blog — MTTR by severity band — https://www.prophetsecurity.ai/blog/soc-metrics-that-matter-mttr-mtti-false-negatives-and-more",
+      "CVSS v3.1 Specification Table 14 Qualitative Severity Rating Scale — https://www.first.org/cvss/v3-1/specification-document"
+    ]
+  },
 
   "rules": [
     {
       "id": "XSS-R01",
-      "phase": 2,
-      "description": "Alert must be investigated within 10 minutes of being raised",
+      "description": "Alert must be investigated within the scenario's MTTA threshold — threshold scales continuously with detection_difficulty",
       "type": "major",
-      "penalty": -15,
-      "auto_fail": false,
-      "trigger": "No alert_investigation_started event within 600 seconds of alert_raised",
-      "source": "NIST SP 800-61 Rev2 Section 3.2.4 — initial analysis should begin promptly after detection; MTTA benchmark: 6-10 min is good, above 15 min is poor — https://kpidepot.com/kpi/mean-time-acknowledge-mtta"
+      "penalty_points": -15,
+      "trigger": "No alert_investigation_started event within MTTA_threshold_sec of alert_raised",
+      "mtta_model": {
+        "formula": "MTTA_threshold_sec = base_mtta_sec × difficulty_factor",
+        "base_mtta_sec": 600,
+        "difficulty_factors": {
+          "low":       1.0,
+          "medium":    1.25,
+          "high":      1.5,
+          "very_high": 2.0
+        },
+        "resulting_thresholds": {
+          "low":       "600s  (10 min)",
+          "medium":    "750s  (12.5 min)",
+          "high":      "900s  (15 min)",
+          "very_high": "1200s (20 min)"
+        },
+        "rationale": "A fixed 10-minute MTTA is unfair for attacks that are inherently hard to detect. DOM-based XSS requires browser-side forensics — the threshold scales with detection_difficulty so the rule remains proportionally meaningful across all scenarios."
+      },
+      "source": "NIST SP 800-61 Rev2 Section 3.2.4 — https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-61r2.pdf"
     },
     {
       "id": "XSS-R02",
-      "phase": 2,
       "description": "Incident must be confirmed — blue team must escalate beyond initial alert",
       "type": "major",
-      "penalty": -15,
-      "auto_fail": false,
+      "penalty_points": -15,
       "trigger": "No incident_confirmed event in event log",
-      "source": "NIST SP 800-61 Rev2 Section 3.2 — incident declaration is a required step in the IR lifecycle"
+      "source": "NIST SP 800-61 Rev2 Section 3.2 — https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-61r2.pdf"
     },
     {
       "id": "XSS-R03",
-      "phase": 2,
-      "description": "Containment must be initiated before max_tolerance threshold",
+      "description": "Containment must be initiated before TTC_max_sec — computed continuously from cvss_base_score",
       "type": "critical",
-      "penalty": -25,
-      "auto_fail": false,
-      "trigger": "No containment_initiated event before max_tolerance_sec seconds",
-      "source": "NIST SP 800-61 Rev2 Section 3.3 — containment strategy must be selected and implemented promptly"
+      "penalty_points": -25,
+      "trigger": "No containment_initiated event before TTC_max_sec (= k × (10 − cvss_base_score) × 1.5)",
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-61r2.pdf"
     },
     {
       "id": "XSS-R04",
-      "phase": 2,
-      "description": "Containment must succeed — session terminated or input blocked",
+      "description": "Containment must succeed — session terminated or malicious input blocked",
       "type": "critical",
-      "penalty": -30,
-      "auto_fail": true,
-      "trigger": "No containment_succeeded event at all",
-      "source": "NIST SP 800-61 Rev2 Section 3.3 — containment must be confirmed before incident can be closed"
+      "penalty_points": -30,
+      "auto_fail": false,
+      "containment_score_on_failure": 0,
+      "rationale": "auto_fail removed — replaced with containment_score=0 on failure. Partial containment exists in real SOC operations (e.g. WAF rule deployed but active sessions not invalidated). A hard binary failure destroys score continuity and prevents distinguishing 'bad response' from 'catastrophic non-response'. Setting containment_score=0 applies the full -30 penalty while preserving meaningful gradients in all other scoring dimensions (TTD, MTTA, rule compliance).",
+      "trigger": "No containment_succeeded event → containment dimension of score = 0 (−30 points from base)",
+      "source": "NIST SP 800-61 Rev2 Section 3.3 — https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-61r2.pdf"
+    },
+    {
+      "id": "XSS-R05",
+      "description": "Alert must not be dismissed as false positive without escalation when Wazuh rule level is 7 or above",
+      "type": "major",
+      "penalty_points": -20,
+      "trigger": "alert_denied event present without a preceding incident_confirmed event AND wazuh_rule_level >= 7",
+      "rationale": "Premature dismissal of a medium-to-high confidence alert is a distinct failure mode from failing to contain. An analyst who investigated and made the wrong call must be scored differently from one who never attempted containment. Rule level >= 7 is the Wazuh confidence threshold.",
+      "source": "NIST SP 800-61 Rev2 Section 3.2.2 — https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-61r2.pdf"
     }
   ],
 
   "scoring": {
     "base_score": 100,
+
+    "ttc_scoring": {
+      "method": "continuous_linear_decay",
+      "description": "TTC_expected and TTC_max are computed per-scenario at runtime from cvss_base_score using ttc_model. Score decays linearly from 100→0 between TTC_expected and TTC_max. Exceeding TTC_max yields 0 for the TTC dimension. Because the formula is continuous, CVSS 7.0 and CVSS 8.9 receive different budgets (10800s vs 3960s), not the same discrete band value.",
+      "formula": "ttc_score = 100 if TTC_actual <= TTC_expected else 100 × (1 − (TTC_actual − TTC_expected) / (TTC_max − TTC_expected)) if TTC_actual <= TTC_max else 0"
+    },
+
+    "detection_difficulty_bonus": {
+      "description": "Bonus is proportional to both detection difficulty and detection speed. Faster detection of harder attacks earns more. The bonus rewards the team's capability, not the attack's properties.",
+      "formula": "bonus = min(β × difficulty_numeric × (1 / TTD_actual_sec), max_bonus)",
+      "beta": 4500,
+      "beta_unit": "seconds",
+      "beta_rationale": "β=4500 calibrated so that detecting a high-difficulty attack (d=3) exactly at its MTTA_threshold (900s) yields a bonus of 15 points — equivalent to one major rule penalty. This keeps the bonus proportionally meaningful without dominating the score.",
+      "difficulty_numeric_map": {
+        "low":       1,
+        "medium":    2,
+        "high":      3,
+        "very_high": 4
+      },
+      "max_bonus": 25,
+      "max_bonus_rationale": "Cap prevents near-instant detection of a very_high difficulty attack from producing a bonus that overwhelms legitimate rule penalties.",
+      "source": "CVSS v3.1 does not model SOC observability or log visibility — this bonus corrects for that structural gap."
+    },
+
     "verdict_thresholds": {
       "excellent":    { "min": 90 },
       "acceptable":   { "min": 70 },
       "needs_review": { "min": 50 },
       "failed":       { "min": 0  }
-    }
+    },
+
+    "engine_contract": "The evaluation engine computes all thresholds (TTC_expected, TTC_max, MTTA_threshold, detection bonus) at runtime from cvss_base_score and detection_difficulty. No TTC or MTTA values are hardcoded in scenario definitions. test_assertion.verdict_band is used for CI validation only — it is never an input to scoring."
   },
 
   "scenarios": [
     {
       "scenario_id": "XSS-S1",
-      "label": "Stored XSS — good response",
-      "description": "Blue team detects, investigates, confirms and contains a stored XSS alert within acceptable time.",
-      "complexity_factors_active": ["stored_vs_reflected", "admin_privilege_targeted"],
-      "complexity": 3,
-      "expected_score": 85,
-      "expected_verdict": "acceptable",
-      "timing_source": "MTTA: 6 min acknowledgment is good performance per https://kpidepot.com/kpi/mean-time-acknowledge-mtta; containment at 65 min is within acceptable range for complexity 3 per NIST SP 800-61 Rev2 Section 3.3",
+      "label": "Stored XSS — admin session targeted, good response",
+      "description": "Stored XSS payload executes in an admin session. Submitted via an authenticated low-privilege account through a profile editor. Triggered when admin loads the page. Blue team detects, investigates, confirms, and contains well within the computed TTC budget.",
+
+      "attack_requires_auth": true,
+      "attack_auth_level": "low_privilege",
+      "attack_auth_rationale": "The injection point is a profile field accessible only to logged-in users. An unauthenticated attacker cannot submit the payload — PR:L is justified here and must not be changed to PR:N without modifying the scenario description.",
+
+      "cvss_components": { "AV": "N", "AC": "L", "PR": "L", "UI": "R", "S": "C", "C": "H", "I": "L", "A": "N" },
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:H/I:L/A:N",
+      "cvss_base_score": 7.6,
+      "cvss_rationale": {
+        "AV:N": "Attack delivered over the network via web input",
+        "AC:L": "No special conditions required — standard authenticated form injection",
+        "PR:L": "Attacker must hold a low-privilege account to reach the profile editor injection point. PR:N applies only if the form is publicly accessible without login.",
+        "UI:R": "Admin interaction required to trigger the stored payload when loading the affected page",
+        "S:C": "Payload executes in the admin's browser, crossing the application's security boundary",
+        "C:H": "Admin session token disclosed — full confidentiality loss of that privileged session",
+        "I:L": "Attacker can modify rendered page content but cannot directly alter backend data",
+        "A:N": "No availability impact"
+      },
+      "cvss_source": "FIRST.org CVSS v3.1 Specification Table 16 — https://www.first.org/cvss/v3-1/specification-document",
+
+      "computed_ttc": {
+        "engine_note": "These values are computed at runtime — shown here for human readability and test tracing only",
+        "ttc_expected_sec": 8640,
+        "ttc_expected_hr":  2.4,
+        "ttc_max_sec":     12960,
+        "ttc_max_hr":       3.6,
+        "formula_trace": "3600 × (10 − 7.6) = 3600 × 2.4 = 8640s"
+      },
+
+      "detection_difficulty": {
+        "level": "low",
+        "difficulty_numeric": 1,
+        "mtta_threshold_sec": 600,
+        "rationale": "Stored XSS payloads appear verbatim in HTTP request bodies and server access logs. Wazuh rule 31106 fires on a direct pattern match. No correlated telemetry required.",
+        "log_visibility": "high",
+        "siem_rule_coverage": "full",
+        "analyst_cognitive_load": "low",
+        "source": "Detection relies on standard WAF/web log inspection — well-covered by Wazuh web attack ruleset"
+      },
+
+      "test_assertion": {
+        "verdict_band": ["acceptable", "excellent"],
+        "rationale": "TTC_actual=3900s < TTC_expected=8640s → ttc_score=100. MTTA=360s within 600s threshold → XSS-R01 clear. All rules satisfied → no penalties. Low difficulty (d=1), bonus = min(4500×1×(1/360), 25) = min(12.5, 25) = 12.5. Final score ≈ 100 + 12.5 = 112.5, capped or normalised by engine → excellent."
+      },
+
       "logs": [
-        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31106 fired — XSS pattern detected in web log" },
-        { "t_offset_sec": 360,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert and began log review — 6 min MTTA (good)" },
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31106 (level 7) fired — XSS pattern detected in web log" },
+        { "t_offset_sec": 360,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 6 min MTTA, within 10 min threshold for low difficulty" },
         { "t_offset_sec": 540,  "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "service", "outcome": "success", "detail": "Analyst-2 confirmed payload stored in DB, escalated to incident" },
-        { "t_offset_sec": 3600, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 initiated WAF rule to block script tags in input" },
-        { "t_offset_sec": 3900, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "WAF rule active, payload stripped from stored records — 65 min total, within acceptable range" }
+        { "t_offset_sec": 3600, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 initiated WAF rule to block script tags — 60 min, well within 2.4hr TTC_expected" },
+        { "t_offset_sec": 3900, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "WAF rule active, payload stripped — 65 min TTC, within 2.4hr expected / 3.6hr max window" }
       ]
     },
+
     {
       "scenario_id": "XSS-S2",
-      "label": "Reflected XSS — alert dismissed incorrectly",
-      "description": "Blue team raises alert but analyst incorrectly dismisses it as false positive. Containment never happens. Auto-fail triggered by XSS-R04.",
-      "complexity_factors_active": ["obfuscated_payload"],
-      "complexity": 1,
-      "expected_score": 0,
-      "expected_verdict": "failed",
-      "timing_source": "Auto-fail from XSS-R04 overrides score to 0 regardless of timing — NIST SP 800-61 Rev2 Section 3.3: containment must be confirmed",
+      "label": "Reflected XSS — obfuscated payload, alert dismissed incorrectly",
+      "description": "Reflected XSS with encoded payload delivered via crafted link — no authentication required. Alert raised but analyst incorrectly marks it as false positive without escalating. XSS-R04 containment_score=0 (no containment_succeeded). XSS-R05 also triggers (alert_denied at Wazuh level 7 without incident_confirmed).",
+
+      "attack_requires_auth": false,
+      "attack_auth_level": "none",
+      "attack_auth_rationale": "Attacker crafts a URL and delivers to victim — no account required. PR:N is correct.",
+
+      "cvss_components": { "AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "C", "C": "L", "I": "N", "A": "N" },
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:L/I:N/A:N",
+      "cvss_base_score": 3.4,
+      "cvss_rationale": {
+        "AV:N": "Delivered over network via crafted link",
+        "AC:H": "Obfuscated payload requires attacker to overcome WAF filters",
+        "PR:N": "No account needed",
+        "UI:R": "Victim must click the attacker-crafted link",
+        "S:C": "Payload executes in victim browser context",
+        "C:L": "Partial session info may be exposed",
+        "I:N": "No integrity impact",
+        "A:N": "No availability impact"
+      },
+      "cvss_source": "FIRST.org CVSS v3.1 Specification Table 16 — https://www.first.org/cvss/v3-1/specification-document",
+
+      "computed_ttc": {
+        "engine_note": "Runtime computed — shown for human readability only",
+        "ttc_expected_sec": 23760,
+        "ttc_expected_hr":  6.6,
+        "ttc_max_sec":     35640,
+        "ttc_max_hr":       9.9,
+        "formula_trace": "3600 × (10 − 3.4) = 3600 × 6.6 = 23760s"
+      },
+
+      "detection_difficulty": {
+        "level": "medium",
+        "difficulty_numeric": 2,
+        "mtta_threshold_sec": 750,
+        "rationale": "Payload is URL-encoded and obfuscated — Wazuh rule 31108 covers encoded XSS variants but analyst must manually decode to confirm. False-positive rate is higher than for plaintext XSS, increasing cognitive load.",
+        "log_visibility": "medium",
+        "siem_rule_coverage": "partial",
+        "analyst_cognitive_load": "medium",
+        "source": "OWASP XSS Filter Evasion Cheat Sheet — https://cheatsheetseries.owasp.org/cheatsheets/XSS_Filter_Evasion_Cheat_Sheet.html"
+      },
+
+      "test_assertion": {
+        "verdict_band": ["failed"],
+        "rationale": "XSS-R04: no containment_succeeded → -30 points. XSS-R05: alert_denied at level 7 → -20 points. Total penalties = -50. No bonus (no containment). Score = 100 - 50 = 50 before any TTC contribution → 'failed' after TTC decay also applies for missed containment window."
+      },
+
       "logs": [
-        { "t_offset_sec": 0,   "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31108 fired — encoded XSS pattern in query string" },
-        { "t_offset_sec": 400, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 6.6 min MTTA (good)" },
-        { "t_offset_sec": 600, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_denied",               "target_type": "alert",   "outcome": "failure", "detail": "Analyst-1 marked alert as false positive — incorrect decision, no containment follows" }
+        { "t_offset_sec": 0,   "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31108 (level 7) fired — encoded XSS pattern in query string" },
+        { "t_offset_sec": 400, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 6.6 min MTTA, within 12.5 min threshold for medium difficulty" },
+        { "t_offset_sec": 600, "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_denied",               "target_type": "alert",   "outcome": "failure",  "detail": "Analyst-1 marked alert as false positive — incorrect. Triggers: XSS-R04 (containment_score=0, -30pts) and XSS-R05 (alert_denied at level 7 without incident_confirmed, -20pts)" }
       ]
     },
+
     {
       "scenario_id": "XSS-S3",
       "label": "DOM-Based XSS — delayed detection, successful containment",
-      "description": "Wazuh fires a CSP violation alert. Blue team struggles initially since no malicious payload appears in server logs. Eventually confirms DOM-based XSS and deploys CSP fix.",
-      "complexity_factors_active": ["dom_based_attack", "obfuscated_payload"],
-      "complexity": 2,
-      "expected_score": 85,
-      "expected_verdict": "acceptable",
-      "timing_source": "MTTA: 10.8 min acknowledgment is delayed; containment at 51.6 min is before max_tolerance of 55 min for complexity 2 — XSS-R01 penalty applied, no XSS-R03 penalty",
+      "description": "CSP violation alert raised. No malicious payload in server-side HTTP logs — payload executes entirely in the browser via a vulnerable JavaScript sink. Analyst confirms DOM-based XSS via browser-side forensics and deploys CSP fix. Proportional detection difficulty bonus applies because high-difficulty attack was detected fast.",
+
+      "attack_requires_auth": false,
+      "attack_auth_level": "none",
+      "attack_auth_rationale": "Victim clicks attacker-crafted link — no account required. PR:N is correct.",
+
+      "cvss_components": { "AV": "N", "AC": "H", "PR": "N", "UI": "R", "S": "C", "C": "L", "I": "L", "A": "N" },
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:L/I:L/A:N",
+      "cvss_base_score": 4.7,
+      "cvss_rationale": {
+        "AV:N": "Delivered over the network — victim clicks a crafted link",
+        "AC:H": "Payload never hits server; must exploit a specific client-side JS sink",
+        "PR:N": "No account required",
+        "UI:R": "Victim must interact with attacker-controlled link or page",
+        "S:C": "Payload executes in victim browser outside the app's server-side control boundary",
+        "C:L": "Fragment data exposed but no full session compromise",
+        "I:L": "DOM content manipulated but no server-side data modified",
+        "A:N": "No availability impact"
+      },
+      "cvss_source": "FIRST.org CVSS v3.1 Specification Table 16 — https://www.first.org/cvss/v3-1/specification-document",
+
+      "computed_ttc": {
+        "engine_note": "Runtime computed — shown for human readability only",
+        "ttc_expected_sec": 19080,
+        "ttc_expected_hr":  5.3,
+        "ttc_max_sec":     28620,
+        "ttc_max_hr":       7.95,
+        "formula_trace": "3600 × (10 − 4.7) = 3600 × 5.3 = 19080s"
+      },
+
+      "detection_difficulty": {
+        "level": "high",
+        "difficulty_numeric": 3,
+        "mtta_threshold_sec": 900,
+        "rationale": "DOM-based XSS executes entirely client-side — no server log artifact. Detection depends solely on CSP violation reports, an uncommon telemetry source absent from many SOC baselines. Standard WAF and Wazuh web rules will not fire. Analyst must pivot to browser-side forensics — non-standard for most L1/L2 analysts.",
+        "log_visibility": "low",
+        "siem_rule_coverage": "partial",
+        "analyst_cognitive_load": "high",
+        "bonus_preview": {
+          "engine_note": "Engine computes from actual TTD at runtime — shown here for test tracing",
+          "formula": "min(4500 × 3 × (1 / 650), 25)",
+          "ttd_actual_sec": 650,
+          "computed_bonus": 20.8
+        },
+        "sources": [
+          "OWASP DOM Based XSS — https://owasp.org/www-community/attacks/DOM_Based_XSS",
+          "OWASP DOM-based XSS Prevention Cheat Sheet — https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html",
+          "CVSS v3.1 does not model SOC observability — detection_difficulty supplements CVSS to correct for this structural gap"
+        ]
+      },
+
+      "test_assertion": {
+        "verdict_band": ["acceptable", "excellent"],
+        "rationale": "TTC_actual=3200s << TTC_expected=19080s → ttc_score=100. MTTA=650s within 900s threshold → XSS-R01 clear. All rules satisfied → no penalties. High difficulty (d=3), TTD=650s → bonus = min(4500×3×(1/650), 25) = min(20.8, 25) = 20.8. Final score ≈ 100 + 20.8 → excellent after engine normalisation."
+      },
+
       "notes": [
         "DOM-based XSS payload operates entirely in the browser — server logs show no injected script.",
         "Detection relies on CSP violation reports rather than HTTP request inspection.",
-        "Containment achieved via Content Security Policy hardening and replacing vulnerable innerHTML sink with textContent."
+        "Containment achieved via Content Security Policy hardening and replacing vulnerable innerHTML sink with textContent.",
+        "OWASP DOM Based XSS — https://owasp.org/www-community/attacks/DOM_Based_XSS",
+        "OWASP DOM-based XSS Prevention Cheat Sheet — https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
       ],
-      "references": [
-        {
-          "name": "OWASP DOM Based XSS",
-          "url": "https://owasp.org/www-community/attacks/DOM_Based_XSS"
-        },
-        {
-          "name": "OWASP DOM-based XSS Prevention Cheat Sheet",
-          "url": "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html"
-        }
-      ],
+
       "logs": [
-        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31110 fired — CSP violation report received; script-src policy blocked inline execution from document.location sink" },
-        { "t_offset_sec": 650,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 10.8 min MTTA (delayed); server request logs reviewed — no malicious payload found in HTTP body or query string" },
-        { "t_offset_sec": 1200, "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "service", "outcome": "success", "detail": "Analyst-2 reviewed CSP violation report — confirmed DOM-based XSS via document.location fragment injection into innerHTML sink" },
-        { "t_offset_sec": 3100, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 deployed updated Content Security Policy and replaced vulnerable innerHTML sink with textContent" },
-        { "t_offset_sec": 3200, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "CSP policy active and sink patched — no further CSP violation reports; DOM-based XSS vector eliminated" }
+        { "t_offset_sec": 0,    "actor_type": "system",    "actor_id": "wazuh",     "event_type": "alert_raised",                "target_type": "service", "outcome": "success", "detail": "Wazuh rule 31110 fired — CSP violation report; script-src policy blocked inline execution from document.location sink" },
+        { "t_offset_sec": 650,  "actor_type": "blue_team", "actor_id": "analyst-1", "event_type": "alert_investigation_started", "target_type": "alert",   "outcome": "success", "detail": "Analyst-1 opened alert — 10.8 min MTTA, within 15 min threshold for high difficulty; no payload in HTTP body or query string" },
+        { "t_offset_sec": 1200, "actor_type": "blue_team", "actor_id": "analyst-2", "event_type": "incident_confirmed",          "target_type": "service", "outcome": "success", "detail": "Analyst-2 confirmed DOM-based XSS via document.location fragment injection into innerHTML sink" },
+        { "t_offset_sec": 3100, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_initiated",       "target_type": "service", "outcome": "success", "detail": "Analyst-3 deployed updated CSP and replaced innerHTML sink with textContent" },
+        { "t_offset_sec": 3200, "actor_type": "blue_team", "actor_id": "analyst-3", "event_type": "containment_succeeded",       "target_type": "service", "outcome": "success", "detail": "CSP active and sink patched — 53 min TTC, well within computed 5.3hr expected / 7.95hr max window" }
       ]
     }
   ]

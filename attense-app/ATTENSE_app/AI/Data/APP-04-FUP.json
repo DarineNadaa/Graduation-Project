@@ -1,0 +1,248 @@
+{
+  "attack_id": "APP-04",
+  "attack_name": "File Upload Exploit",
+  "owasp": {
+    "category": "A05:2021",
+    "name": "Security Misconfiguration",
+    "source": "https://owasp.org/Top10/A05_2021-Security_Misconfiguration/"
+  },
+  "mitre": {
+    "technique_id": "T1505.003",
+    "technique_name": "Server Software Component: Web Shell",
+    "tactic": "Persistence",
+    "source": "https://attack.mitre.org/techniques/T1505/003/"
+  },
+  "description": "File Upload Exploit targets applications that accept user-supplied files without sufficient validation of type, content, or execution context. An attacker uploads a malicious web shell disguised as a permitted file type, then browses to it to achieve server-side code execution.",
+  "cvss_methodology": {
+    "version": "CVSS v3.1",
+    "calculator": "https://www.first.org/cvss/calculator/3.1",
+    "reference": "https://www.first.org/cvss/specification-document"
+  },
+  "ttc_model": {
+    "k": 3600,
+    "formula_expected": "TTC_expected_sec = k × (10 − base_score)",
+    "formula_max": "TTC_max_sec = TTC_expected_sec × 1.5",
+    "notes": "TTC measures the window between web-shell upload and operationally impactful server compromise."
+  },
+  "rules": [
+    {
+      "rule_id": "FUP-R01",
+      "name": "MTTA Threshold Breach",
+      "description": "Mean Time To Acknowledge exceeded for the detected difficulty level.",
+      "thresholds": {
+        "low": 600,
+        "medium": 750,
+        "high": 900,
+        "very_high": 1200
+      },
+      "penalty": -15,
+      "trigger": "investigation_started timestamp − alert_raised timestamp > threshold[detection_difficulty]"
+    },
+    {
+      "rule_id": "FUP-R02",
+      "name": "Incident Not Confirmed",
+      "description": "No incident_confirmed event recorded in the event log (only applies when R05 did not fire).",
+      "penalty": -15,
+      "trigger": "incident_confirmed absent AND alert_denied absent"
+    },
+    {
+      "rule_id": "FUP-R03",
+      "name": "Containment Missed Before TTC_max",
+      "description": "containment_initiated was not observed before TTC_max elapsed from alert_raised.",
+      "penalty": -25,
+      "trigger": "containment_initiated absent OR containment_initiated − alert_raised > TTC_max_sec"
+    },
+    {
+      "rule_id": "FUP-R04",
+      "name": "Containment Failed",
+      "description": "containment_succeeded was never recorded; containment_score = 0.",
+      "penalty": -30,
+      "trigger": "containment_succeeded absent"
+    },
+    {
+      "rule_id": "FUP-R05",
+      "name": "Alert Denied Without Confirmation",
+      "description": "Analyst dismissed a Wazuh alert at level ≥ 7 without a preceding incident_confirmed event.",
+      "level_threshold": 7,
+      "penalty": -20,
+      "trigger": "alert_denied present AND incident_confirmed absent AND wazuh_rule_level >= 7"
+    }
+  ],
+  "scoring": {
+    "base_score": 100,
+    "ttc_decay": "linear from 100 at TTC_expected down to 0 at TTC_max; 0 if exceeded",
+    "bonus": {
+      "formula": "min(β × d × (1 / TTD), 25)",
+      "beta": 4500,
+      "d_values": { "low": 1, "medium": 2, "high": 3, "very_high": 4 },
+      "cap": 25
+    },
+    "verdict_bands": {
+      "excellent":     { "min": 90,  "max": 125 },
+      "acceptable":    { "min": 70,  "max": 89  },
+      "needs_review":  { "min": 50,  "max": 69  },
+      "failed":        { "min": 0,   "max": 49  }
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "FUP-S1",
+      "label": "Authenticated PHP Web Shell Upload via MIME-Type Bypass",
+      "description": "Low-privilege authenticated user uploads a PHP web shell with a '.jpg' extension but PHP MIME type. The application validates extension only; web server executes the file. Full RCE achieved under web-process account. Scope unchanged.",
+      "cvss": {
+        "vector": "AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+        "base_score": 8.8,
+        "component_rationale": {
+          "AV_N": "Exploitable remotely over the network",
+          "AC_L": "Simple extension bypass; no special environmental conditions",
+          "PR_L": "Low-privilege account required to access upload endpoint",
+          "UI_N": "No victim interaction needed",
+          "S_U": "Web shell execution scope confined to web-server process",
+          "C_H": "Full filesystem read accessible to web process",
+          "I_H": "Arbitrary write and code execution on server",
+          "A_H": "Attacker can terminate processes or drop files that disrupt service",
+          "formula_trace": "ISCBase=1−(0.44×0.44×0.44)=0.9149; ISC=6.42×0.9149=5.873; Expl=8.22×0.85×0.77×0.62×0.85=2.835; Score=Roundup(min(5.873+2.835,10))=Roundup(8.708)=8.8"
+        }
+      },
+      "computed_ttc": {
+        "TTC_expected_sec": 4320,
+        "TTC_expected_hr": 1.20,
+        "TTC_max_sec": 6480,
+        "TTC_max_hr": 1.80
+      },
+      "detection_difficulty": "medium",
+      "detection_difficulty_rationale": "PHP extension in upload directory generates Wazuh FIM alert on file creation; correlating upload HTTP request with subsequent GET request to shell path is straightforward but requires log joining.",
+      "attack_requires_auth": true,
+      "attack_auth_rationale": "Attacker requires a valid low-privilege user account to reach the upload endpoint.",
+      "event_log": [
+        { "t_sec": 0,    "actor": "attacker",           "event": "alert_raised",           "detail": "Wazuh rule 550 level 9 fired (FIM): new PHP file created in /uploads/ directory — shell.jpg (MIME: application/x-php). Concurrent access log shows POST /upload followed by GET /uploads/shell.jpg returning 200." },
+        { "t_sec": 500,  "actor": "blue_team/analyst-1", "event": "investigation_started",  "detail": "Analyst-1 opened alert — MTTA 500s, within 750s medium threshold. FIM event correlated with upload access log; PHP execution confirmed from HTTP response body containing 'uid=www-data'." },
+        { "t_sec": 800,  "actor": "blue_team/analyst-2", "event": "incident_confirmed",     "detail": "Analyst-2 confirmed active web shell: GET /uploads/shell.jpg?cmd=id returned server user. File content inspection confirmed PHP exec() wrapper." },
+        { "t_sec": 3500, "actor": "blue_team/analyst-3", "event": "containment_initiated",  "detail": "Analyst-3 removed shell.jpg from uploads directory; web server reconfigured to deny PHP execution in /uploads/ (AddHandler removed); uploading user account suspended." },
+        { "t_sec": 3800, "actor": "blue_team/analyst-3", "event": "containment_succeeded",  "detail": "GET /uploads/shell.jpg returns 403. PHP execution disabled in uploads directory. Upload endpoint now enforces MIME content inspection in addition to extension check. TTC_actual=3800s < TTC_expected=4320s." }
+      ],
+      "rules_evaluation": {
+        "FUP-R01": { "fired": false, "note": "MTTA 500s < 750s threshold for medium difficulty" },
+        "FUP-R02": { "fired": false, "note": "incident_confirmed present at t=800s" },
+        "FUP-R03": { "fired": false, "note": "containment_initiated at t=3500s < TTC_max 6480s" },
+        "FUP-R04": { "fired": false, "note": "containment_succeeded present at t=3800s" },
+        "FUP-R05": { "fired": false, "note": "No alert_denied event" }
+      },
+      "test_assertion": {
+        "TTC_actual_sec": 3800,
+        "TTC_score": 100,
+        "penalty_total": 0,
+        "TTD_sec": 500,
+        "bonus": 18,
+        "final_score": 118,
+        "verdict": "excellent",
+        "notes": "TTC_actual 3800s < TTC_expected 4320s → ttc_score=100. Bonus=min(4500×2×(1/500),25)=min(18,25)=18. Final=100+0+18=118."
+      }
+    },
+    {
+      "scenario_id": "FUP-S2",
+      "label": "Unauthenticated Web Shell via Double Extension — Containment Failure",
+      "description": "Unauthenticated attacker uploads a web shell using a null-byte double extension (shell.php%00.jpg) to bypass extension validation. The web shell executes and establishes a reverse shell. MTTA is breached and no containment occurs before TTC_max.",
+      "cvss": {
+        "vector": "AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "base_score": 8.1,
+        "component_rationale": {
+          "AV_N": "Exploitable remotely over the network",
+          "AC_H": "Null-byte injection technique requires specific server-side language behaviour (PHP < 5.3.4)",
+          "PR_N": "No authentication required; upload endpoint publicly accessible",
+          "UI_N": "No victim interaction needed",
+          "S_U": "Web shell execution scope confined to web-server process",
+          "C_H": "Full filesystem read accessible to web process",
+          "I_H": "Arbitrary write and code execution; reverse shell established",
+          "A_H": "Attacker can disrupt service by overwriting critical web application files",
+          "formula_trace": "ISCBase=1−(0.44×0.44×0.44)=0.9149; ISC=6.42×0.9149=5.873; Expl=8.22×0.85×0.44×0.85×0.85=2.221; Score=Roundup(min(5.873+2.221,10))=Roundup(8.094)=8.1"
+        }
+      },
+      "computed_ttc": {
+        "TTC_expected_sec": 6840,
+        "TTC_expected_hr": 1.90,
+        "TTC_max_sec": 10260,
+        "TTC_max_hr": 2.85
+      },
+      "detection_difficulty": "high",
+      "detection_difficulty_rationale": "Null-byte encoding in filename is not visible in standard access log display; FIM alert fires on file creation but the filename appears as a JPEG; only raw byte inspection reveals the embedded PHP extension.",
+      "attack_requires_auth": false,
+      "event_log": [
+        { "t_sec": 0,    "actor": "attacker",           "event": "alert_raised",           "detail": "Wazuh rule 551 level 9 fired (FIM): new file created in /uploads/ — file name contains null byte preceding .jpg extension; MIME type detected as application/x-php by server content inspection." },
+        { "t_sec": 1050, "actor": "blue_team/analyst-1", "event": "investigation_started",  "detail": "Analyst-1 opened alert — MTTA 1050s, exceeds 900s high threshold. FUP-R01 triggered. Analyst reviewed FIM alert but filename appeared as shell.jpg in log display; PHP content missed at first inspection." },
+        { "t_sec": 2800, "actor": "blue_team/analyst-2", "event": "incident_confirmed",     "detail": "Analyst-2 confirmed PHP web shell via raw file inspection: null byte in filename truncated display; file executed by PHP interpreter. Reverse shell connection to attacker C2 already established before investigation began." }
+      ],
+      "rules_evaluation": {
+        "FUP-R01": { "fired": true,  "penalty": -15, "note": "MTTA 1050s > 900s high threshold" },
+        "FUP-R02": { "fired": false, "note": "incident_confirmed is present at t=2800s" },
+        "FUP-R03": { "fired": true,  "penalty": -25, "note": "No containment_initiated event ever recorded; reverse shell active before containment attempted; TTC_max=10260s passed with no response" },
+        "FUP-R04": { "fired": true,  "penalty": -30, "note": "containment_succeeded never recorded; escalation sent to wrong response team" },
+        "FUP-R05": { "fired": false, "note": "No alert_denied event; incident confirmed but containment never executed" }
+      },
+      "test_assertion": {
+        "TTC_actual_sec": null,
+        "TTC_score": 0,
+        "penalty_total": -70,
+        "TTD_sec": null,
+        "bonus": 0,
+        "final_score": 30,
+        "verdict": "failed",
+        "notes": "No containment → TTC contribution=0. Penalties: FUP-R01(−15)+FUP-R03(−25)+FUP-R04(−30)=−70. Final=100−70=30. R02 suppressed because incident_confirmed is present."
+      }
+    },
+    {
+      "scenario_id": "FUP-S3",
+      "label": "Authenticated Double-Extension Bypass — Very-High Difficulty, Good Response",
+      "description": "Authenticated low-privilege user uploads a web shell using a .php.jpg double extension to bypass MIME validation without null bytes. High attack complexity (WAF partial block). Scope unchanged, limited integrity impact. Despite very-high detection difficulty the SOC contains within the expected window.",
+      "cvss": {
+        "vector": "AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:L/A:N",
+        "base_score": 5.9,
+        "component_rationale": {
+          "AV_N": "Exploitable remotely over the network",
+          "AC_H": "Double-extension technique requires knowing web server AddHandler configuration",
+          "PR_L": "Low-privilege authenticated user required to reach upload endpoint",
+          "UI_N": "No victim interaction needed",
+          "S_U": "Web shell execution confined to web-server process",
+          "C_H": "Full filesystem read accessible to web process account",
+          "I_L": "Limited write: attacker can create files in upload directory only",
+          "A_N": "No availability impact observed",
+          "formula_trace": "ISCBase=1−(0.44×0.78×1)=0.6568; ISC=6.42×0.6568=4.217; Expl=8.22×0.85×0.44×0.68×0.85=1.620; Score=Roundup(min(4.217+1.620,10))=Roundup(5.837)=5.9"
+        }
+      },
+      "computed_ttc": {
+        "TTC_expected_sec": 14760,
+        "TTC_expected_hr": 4.10,
+        "TTC_max_sec": 22140,
+        "TTC_max_hr": 6.15
+      },
+      "detection_difficulty": "very_high",
+      "detection_difficulty_rationale": "Double extension .php.jpg does not trigger standard FIM name-pattern alerts; detection requires content-inspection of all uploaded files, which is computationally expensive and not always enabled by default.",
+      "attack_requires_auth": true,
+      "attack_auth_rationale": "Low-privilege user session required for the upload endpoint.",
+      "event_log": [
+        { "t_sec": 0,     "actor": "attacker",           "event": "alert_raised",           "detail": "Wazuh rule 552 level 6 fired: content-inspection module flagged PHP tags inside uploaded file shell.php.jpg in /uploads/; file served by Apache due to AddHandler php5-script in .htaccess." },
+        { "t_sec": 1100,  "actor": "blue_team/analyst-1", "event": "investigation_started",  "detail": "Analyst-1 opened alert — MTTA 1100s, within 1200s very-high threshold. Content-inspection log confirmed PHP inside shell.php.jpg. Accessed GET /uploads/shell.php.jpg — returned PHP execution output." },
+        { "t_sec": 3600,  "actor": "blue_team/analyst-2", "event": "incident_confirmed",     "detail": "Analyst-2 confirmed web shell active; executed 'ls /var/www/html' via shell. Shell.php.jpg identified as persistent webshell; attacker has read access to application source code and config." },
+        { "t_sec": 12000, "actor": "blue_team/analyst-3", "event": "containment_initiated",  "detail": "Analyst-3 removed shell.php.jpg; disabled .htaccess AddHandler override; restricted uploads to image/jpeg and image/png MIME only; deploying file content-inspection as mandatory upload gate." },
+        { "t_sec": 13000, "actor": "blue_team/analyst-3", "event": "containment_succeeded",  "detail": "Re-upload of test PHP file rejected with 415 Unsupported Media Type. Web shell removed and no longer accessible. TTC_actual=13000s < TTC_expected=14760s." }
+      ],
+      "rules_evaluation": {
+        "FUP-R01": { "fired": false, "note": "MTTA 1100s < 1200s threshold for very-high difficulty" },
+        "FUP-R02": { "fired": false, "note": "incident_confirmed present at t=3600s" },
+        "FUP-R03": { "fired": false, "note": "containment_initiated at t=12000s < TTC_max 22140s" },
+        "FUP-R04": { "fired": false, "note": "containment_succeeded present at t=13000s" },
+        "FUP-R05": { "fired": false, "note": "No alert_denied event" }
+      },
+      "test_assertion": {
+        "TTC_actual_sec": 13000,
+        "TTC_score": 100,
+        "penalty_total": 0,
+        "TTD_sec": 1100,
+        "bonus": 16.36,
+        "final_score": 116.36,
+        "verdict": "excellent",
+        "notes": "TTC_actual 13000s < TTC_expected 14760s → ttc_score=100. Bonus=min(4500×4×(1/1100),25)=min(16.36,25)=16.36. Final=100+0+16.36=116.36."
+      }
+    }
+  ]
+}
