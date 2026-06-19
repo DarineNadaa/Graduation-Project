@@ -8,7 +8,7 @@ from wazuh_ar_client import (  # noqa: E402
     read_cortex_input,
     write_cortex_output,
     get_token,
-    resolve_agent_id_with_fallback,
+    resolve_agent_id,
     trigger_active_response,
 )
 
@@ -16,9 +16,9 @@ from wazuh_ar_client import (  # noqa: E402
 def main():
     try:
         input_data = read_cortex_input()
-        ip_to_block = input_data.get("data")
-        if not ip_to_block:
-            write_cortex_output({"success": False, "errorMessage": "No IP address provided in the input data"})
+        username = input_data.get("data")
+        if not username:
+            write_cortex_output({"success": False, "errorMessage": "No username provided in the input data"})
             return
 
         config = input_data.get("config", {})
@@ -30,25 +30,29 @@ def main():
         if not wazuh_user or not wazuh_password:
             write_cortex_output({"success": False, "errorMessage": "Wazuh credentials are not configured for this responder"})
             return
+        if not agent_name:
+            write_cortex_output({"success": False, "errorMessage": "agent_name is not configured for this responder"})
+            return
 
         token = get_token(wazuh_url, wazuh_user, wazuh_password)
 
-        # The blocked IP is usually the attacker's address, not the agent's —
-        # try resolving an agent reporting from that IP first, then fall back
-        # to the configured agent_name (the lab's monitored host).
-        agent_id = resolve_agent_id_with_fallback(wazuh_url, token, ip=ip_to_block, agent_name=agent_name)
+        # A username observable carries no host/IP, so the agent is resolved
+        # by configured agent_name only (this lab runs a single target agent).
+        agent_id = resolve_agent_id(wazuh_url, token, name=agent_name)
 
+        # Wazuh's disable-account active-response binary reads the username
+        # from the 'dstuser' field of alert.data.
         ar_response = trigger_active_response(
             wazuh_url, token,
-            command="firewall-drop",
-            alert_data={"srcip": ip_to_block},
+            command="disable-account",
+            alert_data={"dstuser": username},
             agent_id=agent_id,
         )
 
         write_cortex_output({
             "success": True,
             "full": {
-                "message": f"Successfully triggered Wazuh firewall-drop for IP: {ip_to_block} (agent {agent_id})",
+                "message": f"Successfully triggered Wazuh disable-account for user: {username} (agent {agent_id})",
                 "wazuhResponse": ar_response,
             },
             "operations": [],

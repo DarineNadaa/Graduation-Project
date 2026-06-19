@@ -1,12 +1,12 @@
 {
-  "name": "WazuhBlockIP",
-  "version": "1.1",
+  "name": "WazuhDisableAccount",
+  "version": "1.0",
   "author": "ATTENSE",
-  "url": "https://github.com/DarineNadaa/Graduation-Project",
+  "url": "https://github.com/ATTENSE",
   "license": "MIT",
-  "description": "Real responder to block an IP using Wazuh Active Response.",
-  "dataTypeList": ["ip"],
-  "command": "WazuhBlockIP/wazuh_block_ip.py",
+  "description": "Disable a compromised user account on the monitored host using Wazuh's built-in disable-account active response.",
+  "dataTypeList": ["other"],
+  "command": "WazuhDisableAccount/wazuh_disable_account.py",
   "baseConfig": "Wazuh",
   "configurationItems": [
     {
@@ -33,7 +33,7 @@
     },
     {
       "name": "agent_name",
-      "description": "Wazuh-registered agent name to fall back to when the observable IP does not match a known agent's reporting address",
+      "description": "Wazuh-registered agent name the account lives on (a username observable has no host/IP to resolve from, so this is the primary lookup)",
       "type": "string",
       "multi": false,
       "required": false,
