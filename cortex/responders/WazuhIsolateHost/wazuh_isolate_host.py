@@ -16,9 +16,9 @@ from wazuh_ar_client import (  # noqa: E402
 def main():
     try:
         input_data = read_cortex_input()
-        ip_to_block = input_data.get("data")
-        if not ip_to_block:
-            write_cortex_output({"success": False, "errorMessage": "No IP address provided in the input data"})
+        host_ip = input_data.get("data")
+        if not host_ip:
+            write_cortex_output({"success": False, "errorMessage": "No host IP provided in the input data"})
             return
 
         config = input_data.get("config", {})
@@ -33,22 +33,21 @@ def main():
 
         token = get_token(wazuh_url, wazuh_user, wazuh_password)
 
-        # The blocked IP is usually the attacker's address, not the agent's —
-        # try resolving an agent reporting from that IP first, then fall back
-        # to the configured agent_name (the lab's monitored host).
-        agent_id = resolve_agent_id_with_fallback(wazuh_url, token, ip=ip_to_block, agent_name=agent_name)
+        # Here the IP observable IS the host to isolate, so it should match
+        # the target agent's own reporting IP; fall back to agent_name if not.
+        agent_id = resolve_agent_id_with_fallback(wazuh_url, token, ip=host_ip, agent_name=agent_name)
 
         ar_response = trigger_active_response(
             wazuh_url, token,
-            command="firewall-drop",
-            alert_data={"srcip": ip_to_block},
+            command="route-null",
+            alert_data={"srcip": host_ip},
             agent_id=agent_id,
         )
 
         write_cortex_output({
             "success": True,
             "full": {
-                "message": f"Successfully triggered Wazuh firewall-drop for IP: {ip_to_block} (agent {agent_id})",
+                "message": f"Successfully triggered Wazuh route-null isolation for host: {host_ip} (agent {agent_id})",
                 "wazuhResponse": ar_response,
             },
             "operations": [],
